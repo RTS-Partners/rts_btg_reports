@@ -699,14 +699,15 @@
 
     const rows = banker ? allClients.filter(c => c.banker === banker) : allClients;
 
-    // Sort by banker-code then conta_btg
+    // Sort by client code (banker-code), then by conta
     const opts = rows
       .filter(c => c.conta_btg)
       .map(c => ({
-        value: c.conta_btg,
-        label: `${c.conta_btg} — ${c.banker}-${c.code} — ${c.id} — ${c.conta}`
+        value:   c.conta_btg,
+        label:   `${c.conta_btg} — ${c.banker}-${c.code} — ${c.id} — ${c.conta}`,
+        sortKey: `${c.banker || ''}-${c.code || ''}-${c.conta || ''}`
       }))
-      .sort((a, b) => a.label.localeCompare(b.label));
+      .sort((a, b) => a.sortKey.localeCompare(b.sortKey));
 
     sel.innerHTML = '<option value="">Todos</option>';
     opts.forEach(o => addOption(sel, o.value, o.label));
