@@ -303,10 +303,9 @@
           <table id="data-table" style="display:none">
             <thead>
               <tr>
-                <th onclick="sortBy('banker')">Banker</th>
                 <th onclick="sortBy('client_code')">Cód. Cliente</th>
-                <th onclick="sortBy('conta_btg')">Conta BTG</th>
                 <th onclick="sortBy('conta')">Conta</th>
+                <th onclick="sortBy('conta_btg')">Conta BTG</th>
                 <th onclick="sortBy('classe')">Classe</th>
                 <th onclick="sortBy('nome')">Ativo</th>
                 <th onclick="sortBy('codigo')">Cód. Ativo</th>
@@ -388,9 +387,9 @@
   let clsChart = null, bnkChart = null, matChart = null;
 
   const COL_IDX = {
-    banker:0, client_code:1, conta_btg:2, conta:3, classe:4,
-    nome:5, codigo:6, emissor:7, indexador:8, taxa:9,
-    vencimento:10, quantidade:11, valor_bruto:12
+    client_code:0, conta:1, conta_btg:2, classe:3, nome:4,
+    codigo:5, emissor:6, indexador:7, taxa:8,
+    vencimento:9, quantidade:10, valor_bruto:11
   };
 
   function classLabel(c) { return c === 'Liquidações Pendentes' ? 'Provisões' : (c || ''); }
@@ -574,27 +573,12 @@
   }
 
   /* RENDER: POSITIONS */
-  function render() {
-    if (!filteredRows.length) { document.getElementById('data-table').style.display = 'none'; document.getElementById('tbl-count').textContent = ''; setStateNoResults(); return; }
-    const caixaOnly = document.getElementById('f-caixa-btg').checked;
-    const displayRows = caixaOnly ? filteredRows.filter(p => p.nome === 'Caixa BTG') : filteredRows;
-    if (!displayRows.length) { document.getElementById('data-table').style.display = 'none'; document.getElementById('tbl-count').textContent = ''; setStateNoResults(); return; }
-    document.getElementById('tbl-state').style.display = 'none';
-    document.getElementById('data-table').style.display = 'table';
-    document.getElementById('tbl-count').textContent = ` — ${displayRows.length.toLocaleString('pt-BR')} linhas`;
-    const grps = []; let gc = null;
-    displayRows.forEach(p => {
-      const gkey = (p.client_code||'') + '|' + (p.conta||'');
-      if (!gc || gc.key !== gkey) { gc = { key: gkey, label: [p.client_code, p.conta].filter(Boolean).join(' — '), rows: [], total: 0 }; grps.push(gc); }
-      gc.rows.push(p); gc.total += parseFloat(p.valor_bruto) || 0;
-    });
-    document.getElementById('tbl-body').innerHTML = grps.map(g =>
-      g.rows.map(p => `
+  function rowHtml(p) {
+    return `
       <tr>
-        <td><span class="badge">${x(p.banker)}</span></td>
-        <td>${x(p.client_code)}</td>
-        <td class="td-muted td-mono">${x(p.conta_btg)}</td>
+        <td><span class="badge">${x(p.client_code)}</span></td>
         <td>${x(p.conta)}</td>
+        <td class="td-muted td-mono">${x(p.conta_btg)}</td>
         <td>${x(classLabel(p.classe))}</td>
         <td class="td-ativo" title="${p.nome != null ? String(p.nome).replace(/"/g,'&quot;') : ''}">${x(p.nome)}</td>
         <td class="td-muted td-mono">${x(p.codigo)}</td>
@@ -604,12 +588,43 @@
         <td class="td-muted td-vencimento">${fmtDate(p.vencimento)}</td>
         <td class="td-right td-muted">${fmtQty(p.quantidade)}</td>
         <td class="td-right"><strong>${fmtBRL(p.valor_bruto)}</strong></td>
-      </tr>`).join('') +
-      `<tr class="subtotal-row">
-        <td colspan="12" class="td-right td-muted">${x(g.label)}</td>
-        <td class="td-right"><strong>${fmtBRL(g.total)}</strong></td>
-      </tr>`
-    ).join('');
+      </tr>`;
+  }
+  function render() {
+    if (!filteredRows.length) { document.getElementById('data-table').style.display = 'none'; document.getElementById('tbl-count').textContent = ''; setStateNoResults(); return; }
+    // Aggregate by client_code + conta + nome + taxa + vencimento
+    const aggMap = new Map();
+    filteredRows.forEach(p => {
+      const key = [p.client_code||'', p.conta||'', p.nome||'', p.taxa!=null?p.taxa:'', p.vencimento||''].join('|');
+      if (!aggMap.has(key)) aggMap.set(key, { ...p, valor_bruto: 0, quantidade: 0 });
+      const a = aggMap.get(key);
+      a.valor_bruto += parseFloat(p.valor_bruto) || 0;
+      a.quantidade += parseFloat(p.quantidade) || 0;
+    });
+    const caixaOnly = document.getElementById('f-caixa-btg').checked;
+    let aggRows = Array.from(aggMap.values());
+    if (caixaOnly) aggRows = aggRows.filter(p => p.nome === 'Caixa BTG');
+    if (!aggRows.length) { document.getElementById('data-table').style.display = 'none'; document.getElementById('tbl-count').textContent = ''; setStateNoResults(); return; }
+    document.getElementById('tbl-state').style.display = 'none';
+    document.getElementById('data-table').style.display = 'table';
+    document.getElementById('tbl-count').textContent = ` — ${aggRows.length.toLocaleString('pt-BR')} linhas`;
+    if (caixaOnly) {
+      document.getElementById('tbl-body').innerHTML = aggRows.map(p => rowHtml(p)).join('');
+    } else {
+      const grps = []; let gc = null;
+      aggRows.forEach(p => {
+        const gkey = (p.client_code||'') + '|' + (p.conta||'');
+        if (!gc || gc.key !== gkey) { gc = { key: gkey, label: [p.client_code, p.conta].filter(Boolean).join(' — '), rows: [], total: 0 }; grps.push(gc); }
+        gc.rows.push(p); gc.total += p.valor_bruto;
+      });
+      document.getElementById('tbl-body').innerHTML = grps.map(g =>
+        g.rows.map(p => rowHtml(p)).join('') +
+        `<tr class="subtotal-row">
+          <td colspan="11" class="td-right td-muted">${x(g.label)}</td>
+          <td class="td-right"><strong>${fmtBRL(g.total)}</strong></td>
+        </tr>`
+      ).join('');
+    }
     document.querySelectorAll('#data-table thead th').forEach((th, i) => {
       th.classList.remove('sort-asc', 'sort-desc');
       if (sortCol !== null && i === COL_IDX[sortCol]) th.classList.add(sortDir === 'asc' ? 'sort-asc' : 'sort-desc');
