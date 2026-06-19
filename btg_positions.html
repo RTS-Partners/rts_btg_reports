@@ -102,6 +102,8 @@
     .table-wrapper::-webkit-scrollbar-corner { background: var(--bg); }
     table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; table-layout: auto; }
     .subtotal-row td { background: #181716; border-top: 2px solid var(--border); font-size: 0.78rem; padding-top: 0.3rem; padding-bottom: 0.3rem; }
+    .check-label { display: flex; align-items: center; gap: 0.4rem; font-size: 0.78rem; font-weight: 600; color: var(--text-muted); cursor: pointer; user-select: none; letter-spacing: 0.04em; text-transform: uppercase; }
+    .check-label input[type=checkbox] { width: auto; accent-color: var(--primary); cursor: pointer; }
     thead th { background: #242220; padding: 0.6rem 0.875rem; text-align: left; font-size: 0.68rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid var(--border); white-space: nowrap; cursor: pointer; user-select: none; transition: background 0.1s, color 0.1s; position: sticky; top: 0; z-index: 2; }
     thead th.no-sort { cursor: default; }
     thead th:hover:not(.no-sort) { background: #2E2B28; color: var(--text); }
@@ -280,7 +282,7 @@
       <button class="tab-btn" onclick="switchTab('by-class')">Por Classe</button>
       <button class="tab-btn" onclick="switchTab('by-banker')">Por Banker</button>
       <button class="tab-btn" onclick="switchTab('maturities')">Vencimentos</button>
-      <button class="tab-btn" onclick="switchTab('caixa')">Caixa</button>
+
     </div>
 
     <!-- Posições -->
@@ -291,6 +293,7 @@
             <span class="table-title">Posições BTG</span>
             <span class="table-count" id="tbl-count"></span>
           </div>
+          <label class="check-label"><input type="checkbox" id="f-caixa-btg" onchange="render()"> Caixa BTG</label>
         </div>
         <div class="table-wrapper">
           <div id="tbl-state" class="state-box">
@@ -364,44 +367,6 @@
           <div id="mat-legend" class="chart-legend"></div>
         </div>
       </div>
-    <!-- Caixa -->
-    <div id="view-caixa" class="tab-view">
-      <div class="card table-card">
-        <div class="table-head">
-          <div>
-            <span class="table-title">Caixa por Cliente</span>
-            <span class="table-count" id="caixa-count"></span>
-          </div>
-        </div>
-        <div class="table-wrapper">
-          <div id="caixa-state" class="state-box">
-            <div class="state-icon">💰</div>
-            <div class="state-msg">Selecione uma data e clique em <strong>Buscar</strong> para carregar.</div>
-          </div>
-          <table id="caixa-table" style="display:none">
-            <thead>
-              <tr>
-                <th onclick="sortCaixa('banker')">Banker</th>
-                <th onclick="sortCaixa('client_code')">Cód. Cliente</th>
-                <th onclick="sortCaixa('conta_btg')">Conta BTG</th>
-                <th onclick="sortCaixa('conta')">Conta</th>
-                <th onclick="sortCaixa('classe')">Classe</th>
-                <th onclick="sortCaixa('nome')">Ativo</th>
-                <th onclick="sortCaixa('codigo')">Cód. Ativo</th>
-                <th onclick="sortCaixa('emissor')">Emissor</th>
-                <th onclick="sortCaixa('indexador')">Indexador</th>
-                <th onclick="sortCaixa('taxa')" style="text-align:right">Taxa</th>
-                <th onclick="sortCaixa('vencimento')">Vencimento</th>
-                <th onclick="sortCaixa('quantidade')" style="text-align:right">Qtd</th>
-                <th onclick="sortCaixa('valor_bruto')" style="text-align:right">Valor Bruto</th>
-              </tr>
-            </thead>
-            <tbody id="caixa-body"></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
     </div>
   </div>
 </div>
@@ -419,7 +384,6 @@
   let sb, appReady = false, clientMap = {}, allClients = [], holidays = new Set();
   let allPositions = [], filteredRows = [];
   let sortCol = null, sortDir = 'asc';
-  let caixaSortCol = null, caixaSortDir = 'asc';
   let activeTab = 'positions';
   let clsChart = null, bnkChart = null, matChart = null;
 
@@ -428,7 +392,6 @@
     nome:5, codigo:6, emissor:7, indexador:8, taxa:9,
     vencimento:10, quantidade:11, valor_bruto:12
   };
-  const COL_IDX_CAIXA = { banker:0, client_code:1, conta_btg:2, conta:3, classe:4, nome:5, codigo:6, emissor:7, indexador:8, taxa:9, vencimento:10, quantidade:11, valor_bruto:12 };
 
   function classLabel(c) { return c === 'Liquidações Pendentes' ? 'Provisões' : (c || ''); }
 
@@ -520,7 +483,7 @@
   /* TABS */
   function switchTab(name) {
     activeTab = name;
-    document.querySelectorAll('.tab-btn').forEach((b, i) => b.classList.toggle('active', ['positions','by-class','by-banker','maturities','caixa'][i] === name));
+    document.querySelectorAll('.tab-btn').forEach((b, i) => b.classList.toggle('active', ['positions','by-class','by-banker','maturities'][i] === name));
     document.querySelectorAll('.tab-view').forEach(v => v.classList.remove('active'));
     document.getElementById('view-' + name).classList.add('active');
     if (filteredRows.length) renderTab(name);
@@ -530,7 +493,6 @@
     else if (name === 'by-class') renderByClass();
     else if (name === 'by-banker') renderByBanker();
     else if (name === 'maturities') renderMaturities();
-    else if (name === 'caixa') renderCaixa();
   }
 
   /* FETCH + FILTER */
@@ -564,8 +526,8 @@
     document.getElementById('f-banker').value = '';
     rebuildClientDropdown();
     allPositions = []; filteredRows = [];
+    document.getElementById('f-caixa-btg').checked = false;
     sortCol = null; sortDir = 'asc';
-    caixaSortCol = null; caixaSortDir = 'asc';
     clearSummary(); setStateEmpty();
     ['cls','bnk','mat'].forEach(p => {
       document.getElementById(p + '-chart-wrap').style.display = 'none';
@@ -574,10 +536,6 @@
     });
     [clsChart, bnkChart, matChart].forEach(c => { if (c) c.destroy(); });
     clsChart = bnkChart = matChart = null;
-    document.getElementById('caixa-table').style.display = 'none';
-    document.getElementById('caixa-count').textContent = '';
-    document.getElementById('caixa-state').style.display = 'block';
-    document.getElementById('caixa-state').innerHTML = emptyPrompt();
   }
 
   /* SORT */
@@ -618,12 +576,16 @@
   /* RENDER: POSITIONS */
   function render() {
     if (!filteredRows.length) { document.getElementById('data-table').style.display = 'none'; document.getElementById('tbl-count').textContent = ''; setStateNoResults(); return; }
+    const caixaOnly = document.getElementById('f-caixa-btg').checked;
+    const displayRows = caixaOnly ? filteredRows.filter(p => p.nome === 'Caixa BTG') : filteredRows;
+    if (!displayRows.length) { document.getElementById('data-table').style.display = 'none'; document.getElementById('tbl-count').textContent = ''; setStateNoResults(); return; }
     document.getElementById('tbl-state').style.display = 'none';
     document.getElementById('data-table').style.display = 'table';
-    document.getElementById('tbl-count').textContent = ` — ${filteredRows.length.toLocaleString('pt-BR')} linhas`;
+    document.getElementById('tbl-count').textContent = ` — ${displayRows.length.toLocaleString('pt-BR')} linhas`;
     const grps = []; let gc = null;
-    filteredRows.forEach(p => {
-      if (!gc || gc.key !== p.conta_btg) { gc = { key: p.conta_btg, rows: [], total: 0 }; grps.push(gc); }
+    displayRows.forEach(p => {
+      const gkey = (p.client_code||'') + '|' + (p.conta||'');
+      if (!gc || gc.key !== gkey) { gc = { key: gkey, label: [p.client_code, p.conta].filter(Boolean).join(' — '), rows: [], total: 0 }; grps.push(gc); }
       gc.rows.push(p); gc.total += parseFloat(p.valor_bruto) || 0;
     });
     document.getElementById('tbl-body').innerHTML = grps.map(g =>
@@ -644,7 +606,7 @@
         <td class="td-right"><strong>${fmtBRL(p.valor_bruto)}</strong></td>
       </tr>`).join('') +
       `<tr class="subtotal-row">
-        <td colspan="12" class="td-right td-muted">${x(g.key)}</td>
+        <td colspan="12" class="td-right td-muted">${x(g.label)}</td>
         <td class="td-right"><strong>${fmtBRL(g.total)}</strong></td>
       </tr>`
     ).join('');
@@ -733,91 +695,6 @@
     document.getElementById('mat-chart-wrap').style.display = 'flex';
     if (matChart) { matChart.destroy(); matChart = null; }
     matChart = makePie('mat-canvas', 'mat-legend', 'Prazo', active.map(b => b.label), active.map(b => b.aum));
-  }
-
-  /* RENDER: CAIXA */
-  let caixaRows = [];
-
-  function sortCaixa(col) {
-    if (caixaSortCol === col) caixaSortDir = caixaSortDir === 'asc' ? 'desc' : 'asc';
-    else { caixaSortCol = col; caixaSortDir = 'asc'; }
-    caixaApplySort(); renderCaixaTable();
-  }
-
-  function caixaApplySort() {
-    if (caixaSortCol === null) {
-      caixaRows.sort((a, b) => {
-        const cc = String(a.client_code||'').localeCompare(String(b.client_code||''));
-        if (cc !== 0) return cc;
-        const co = String(a.conta||'').localeCompare(String(b.conta||''));
-        if (co !== 0) return co;
-        const cl = String(a.classe||'').localeCompare(String(b.classe||''));
-        if (cl !== 0) return cl;
-        const nm = String(a.nome||'').localeCompare(String(b.nome||''));
-        if (nm !== 0) return nm;
-        return vencSort(a).localeCompare(vencSort(b));
-      });
-      return;
-    }
-    caixaRows.sort((a, b) => {
-      let va = a[caixaSortCol], vb = b[caixaSortCol];
-      if (va == null) va = caixaSortDir === 'asc' ? Infinity : -Infinity;
-      if (vb == null) vb = caixaSortDir === 'asc' ? Infinity : -Infinity;
-      const na = parseFloat(va), nb = parseFloat(vb);
-      if (!isNaN(na) && !isNaN(nb)) return caixaSortDir === 'asc' ? na - nb : nb - na;
-      const sa = String(va).toLowerCase(), sb2 = String(vb).toLowerCase();
-      return caixaSortDir === 'asc' ? (sa < sb2 ? -1 : sa > sb2 ? 1 : 0) : (sb2 < sa ? -1 : sb2 > sa ? 1 : 0);
-    });
-  }
-
-  function renderCaixa() {
-    caixaRows = filteredRows.filter(p => p.nome === 'Caixa BTG');
-    caixaApplySort();
-    renderCaixaTable();
-  }
-
-  function renderCaixaTable() {
-    if (!caixaRows.length) {
-      document.getElementById('caixa-table').style.display = 'none';
-      document.getElementById('caixa-count').textContent = '';
-      document.getElementById('caixa-state').style.display = 'block';
-      document.getElementById('caixa-state').innerHTML = `<div class="state-icon">🔍</div><div class="state-msg">Nenhuma posição "Caixa BTG" encontrada.</div>`;
-      return;
-    }
-    document.getElementById('caixa-state').style.display = 'none';
-    document.getElementById('caixa-table').style.display = 'table';
-    document.getElementById('caixa-count').textContent = ` — ${caixaRows.length.toLocaleString('pt-BR')} linhas`;
-    const cGrps = []; let cGc = null;
-    caixaRows.forEach(p => {
-      if (!cGc || cGc.key !== p.conta_btg) { cGc = { key: p.conta_btg, rows: [], total: 0 }; cGrps.push(cGc); }
-      cGc.rows.push(p); cGc.total += parseFloat(p.valor_bruto) || 0;
-    });
-    document.getElementById('caixa-body').innerHTML = cGrps.map(g =>
-      g.rows.map(p => `
-      <tr>
-        <td><span class="badge">${x(p.banker)}</span></td>
-        <td>${x(p.client_code)}</td>
-        <td class="td-muted td-mono">${x(p.conta_btg)}</td>
-        <td>${x(p.conta)}</td>
-        <td>${x(classLabel(p.classe))}</td>
-        <td class="td-ativo" title="${p.nome != null ? String(p.nome).replace(/"/g,'&quot;') : ''}">${x(p.nome)}</td>
-        <td class="td-muted td-mono">${x(p.codigo)}</td>
-        <td class="td-muted td-emissor" title="${p.emissor != null ? String(p.emissor).replace(/"/g,'&quot;') : ''}">${x(p.emissor)}</td>
-        <td class="td-indexador" title="${p.indexador != null ? String(p.indexador).replace(/"/g,'&quot;') : ''}">${x(p.indexador)}</td>
-        <td class="td-right td-muted">${fmtRate(p.taxa)}</td>
-        <td class="td-muted td-vencimento">${fmtDate(p.vencimento)}</td>
-        <td class="td-right td-muted">${fmtQty(p.quantidade)}</td>
-        <td class="td-right"><strong>${fmtBRL(p.valor_bruto)}</strong></td>
-      </tr>`).join('') +
-      `<tr class="subtotal-row">
-        <td colspan="12" class="td-right td-muted">${x(g.key)}</td>
-        <td class="td-right"><strong>${fmtBRL(g.total)}</strong></td>
-      </tr>`
-    ).join('');
-    document.querySelectorAll('#caixa-table thead th').forEach((th, i) => {
-      th.classList.remove('sort-asc', 'sort-desc');
-      if (caixaSortCol !== null && i === COL_IDX_CAIXA[caixaSortCol]) th.classList.add(caixaSortDir === 'asc' ? 'sort-asc' : 'sort-desc');
-    });
   }
 
   /* SUMMARY */
