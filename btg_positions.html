@@ -94,9 +94,9 @@
     .table-head { padding: 0.85rem 1.25rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
     .table-title { font-size: 0.875rem; font-weight: 700; }
     .table-count { font-size: 0.78rem; color: var(--text-muted); font-weight: 400; margin-left: 0.4rem; }
-    .table-wrapper { overflow-x: auto; }
+    .table-wrapper { overflow-x: auto; overflow-y: auto; max-height: 620px; }
     table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; table-layout: auto; }
-    thead th { background: #242220; padding: 0.6rem 0.875rem; text-align: left; font-size: 0.68rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid var(--border); white-space: nowrap; cursor: pointer; user-select: none; transition: background 0.1s, color 0.1s; }
+    thead th { background: #242220; padding: 0.6rem 0.875rem; text-align: left; font-size: 0.68rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid var(--border); white-space: nowrap; cursor: pointer; user-select: none; transition: background 0.1s, color 0.1s; position: sticky; top: 0; z-index: 2; }
     thead th.no-sort { cursor: default; }
     thead th:hover:not(.no-sort) { background: #2E2B28; color: var(--text); }
     thead th.sort-asc::after  { content: ' ↑'; opacity: 0.6; }
