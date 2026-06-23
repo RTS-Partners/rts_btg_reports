@@ -159,9 +159,28 @@
     /* ASSET ALLOCATION CHART */
     .alloc-controls { display: flex; align-items: center; gap: 1rem; padding: 0.85rem 1.25rem; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
     .alloc-canvas-wrap { padding: 1.25rem; position: relative; }
+    .alloc-canvas-wrap canvas { cursor: pointer; }
     .alloc-legend { padding: 0 1.25rem 1.25rem; display: flex; flex-wrap: wrap; gap: 0.5rem; }
     .alloc-legend-item { display: flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; color: var(--text-muted); }
     .alloc-legend-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+
+    /* ALLOC DRILL-DOWN MODAL */
+    .alloc-drill-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.65); z-index: 1000; display: none; align-items: center; justify-content: center; padding: 1rem; }
+    .alloc-drill-overlay.open { display: flex; }
+    .alloc-drill-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow-lg); width: 100%; max-width: 780px; max-height: 82vh; display: flex; flex-direction: column; overflow: hidden; }
+    .alloc-drill-header { padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-shrink: 0; }
+    .alloc-drill-title { font-size: 0.95rem; font-weight: 700; }
+    .alloc-drill-sub { font-size: 0.78rem; color: var(--text-muted); margin-top: 0.25rem; }
+    .alloc-drill-close { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1.1rem; padding: 0.15rem 0.45rem; line-height: 1; border-radius: 4px; flex-shrink: 0; }
+    .alloc-drill-close:hover { background: var(--border); color: var(--text); }
+    .alloc-drill-body { overflow-y: auto; flex: 1; }
+    .alloc-drill-body table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+    .alloc-drill-body thead th { background: #242220; padding: 0.6rem 0.875rem; text-align: left; font-size: 0.68rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid var(--border); white-space: nowrap; position: sticky; top: 0; z-index: 1; }
+    .alloc-drill-body thead th.num { text-align: right; }
+    .alloc-drill-body tbody tr { border-bottom: 1px solid var(--border); transition: background 0.08s; }
+    .alloc-drill-body tbody tr:hover { background: #252320; }
+    .alloc-drill-body tbody td { padding: 0.55rem 0.875rem; white-space: nowrap; }
+    .alloc-drill-hint { font-size: 0.7rem; color: var(--text-muted); padding: 0.5rem 1.25rem 0.75rem; flex-shrink: 0; }
 
     /* RESPONSIVE */
     @media (max-width: 900px) {
@@ -400,6 +419,34 @@
   </div>
 </div>
 
+<!-- ALLOC DRILL-DOWN MODAL -->
+<div id="alloc-drill-overlay" class="alloc-drill-overlay" onclick="if(event.target===this)closeAllocDrilldown()">
+  <div class="alloc-drill-panel">
+    <div class="alloc-drill-header">
+      <div>
+        <div class="alloc-drill-title" id="alloc-drill-title"></div>
+        <div class="alloc-drill-sub" id="alloc-drill-sub"></div>
+      </div>
+      <button class="alloc-drill-close" onclick="closeAllocDrilldown()">✕</button>
+    </div>
+    <div class="alloc-drill-body">
+      <table>
+        <thead>
+          <tr>
+            <th>Ativo</th>
+            <th>Código</th>
+            <th>Emissor</th>
+            <th class="num">Valor Bruto</th>
+            <th class="num">%</th>
+          </tr>
+        </thead>
+        <tbody id="alloc-drill-body"></tbody>
+      </table>
+    </div>
+    <div class="alloc-drill-hint">Clique fora do painel ou pressione ESC para fechar.</div>
+  </div>
+</div>
+
 <script>
   const SB_URL = 'https://gmvraqrvovvpuxmqgkaz.supabase.co';
   const SB_KEY = 'sb_publishable_fLL0TQYYCP7frJIqf-S49g_3Q2LNDUI';
@@ -441,6 +488,7 @@
     if (session && !appReady) { appReady = true; await enterApp(session.user); }
     document.getElementById('inp-password').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
     document.getElementById('f-banker').addEventListener('change', rebuildClientDropdown);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAllocDrilldown(); });
   });
 
   /* HOLIDAYS */
@@ -926,7 +974,7 @@
     const allocData = {};
     for (const dt of days) {
       let q = sb.from('tb_btg_position')
-        .select('conta_btg, data, codigo, nome, valor_bruto, indexador, classe');
+        .select('conta_btg, data, codigo, nome, emissor, valor_bruto, indexador, classe');
       q = q.eq('data', dt);
       if (contaList && contaList.length > 0) q = q.in('conta_btg', contaList);
       const PAGE = 1000; let from = 0, dayRows = [];
@@ -1075,6 +1123,17 @@
         maintainAspectRatio: false,
         layout: { padding: { right: 110 } },
         interaction: { mode: 'index', intersect: false, axis: 'y' },
+        onClick: (event, _elements, chart) => {
+          const nearest = chart.getElementsAtEventForMode(event, 'nearest', { intersect: true }, false);
+          if (!nearest.length) return;
+          const { datasetIndex, index } = nearest[0];
+          const clickedDate = datesWithData[index];
+          const clickedIndexador = indexList[datasetIndex];
+          if (!clickedDate || !clickedIndexador) return;
+          const segRows = (allocData[clickedDate] || []).filter(p => resolveIndexador(p) === clickedIndexador);
+          const color = datasets[datasetIndex].backgroundColor;
+          openAllocDrilldown(clickedDate, clickedIndexador, segRows, color);
+        },
         plugins: {
           legend: { display: false },
           tooltip: {
@@ -1178,6 +1237,38 @@
   function fmtRate(v) { const n = parseFloat(v); if (isNaN(n)) return '<span class="td-muted">—</span>'; return n.toLocaleString('pt-BR', { minimumFractionDigits:2, maximumFractionDigits:4 }) + '%'; }
   function fmtDate(v) { if (!v) return '<span class="td-muted">—</span>'; const [y,m,d] = String(v).split('-'); return (y && m && d) ? `${d}/${m}/${y}` : v; }
   function addOption(sel, value, label) { const o = document.createElement('option'); o.value = value; o.textContent = label; sel.appendChild(o); }
+
+  /* ALLOC DRILL-DOWN */
+  function openAllocDrilldown(date, indexador, rows, color) {
+    const aggMap = new Map();
+    rows.forEach(p => {
+      const key = (p.codigo || '') + '|' + (p.nome || '');
+      if (!aggMap.has(key)) aggMap.set(key, { nome: p.nome || '', codigo: p.codigo || '', emissor: p.emissor || '', valor_bruto: 0 });
+      aggMap.get(key).valor_bruto += parseFloat(p.valor_bruto) || 0;
+    });
+    const assets = [...aggMap.values()].sort((a, b) => b.valor_bruto - a.valor_bruto);
+    const segTotal = assets.reduce((s, a) => s + a.valor_bruto, 0);
+    const [y, m, d] = date.split('-');
+    const dateLabel = `${d}/${m}/${y}`;
+    const dot = `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${color};margin-right:6px;vertical-align:middle;flex-shrink:0"></span>`;
+    document.getElementById('alloc-drill-title').innerHTML = `${dot}${x(indexador)} <span style="font-weight:400;color:var(--text-muted)">— ${dateLabel}</span>`;
+    document.getElementById('alloc-drill-sub').textContent = `${assets.length} ativo${assets.length !== 1 ? 's' : ''} · Total: ${fmtBRLPlain(segTotal)}`;
+    document.getElementById('alloc-drill-body').innerHTML = assets.map(a => {
+      const pct = segTotal ? (a.valor_bruto / segTotal * 100).toFixed(1) + '%' : '—';
+      return `<tr>
+        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${String(a.nome).replace(/"/g,'&quot;')}">${x(a.nome)}</td>
+        <td class="td-muted td-mono">${x(a.codigo)}</td>
+        <td class="td-muted" style="max-width:180px;overflow:hidden;text-overflow:ellipsis" title="${String(a.emissor).replace(/"/g,'&quot;')}">${x(a.emissor)}</td>
+        <td class="td-right"><strong>${fmtBRLPlain(a.valor_bruto)}</strong></td>
+        <td class="td-right td-muted">${pct}</td>
+      </tr>`;
+    }).join('');
+    document.getElementById('alloc-drill-overlay').classList.add('open');
+  }
+
+  function closeAllocDrilldown() {
+    document.getElementById('alloc-drill-overlay').classList.remove('open');
+  }
 </script>
 </body>
 </html>
