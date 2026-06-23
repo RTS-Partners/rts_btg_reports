@@ -886,7 +886,6 @@
     }).join('');
 
     // Bar chart — earliest 5 years
-    const first5 = sorted.slice(0, 5);
     if (matBarChart) { matBarChart.destroy(); matBarChart = null; }
     matBarChart = new Chart(document.getElementById('mat-bar-canvas'), {
       type: 'bar',
