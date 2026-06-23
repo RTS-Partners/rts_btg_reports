@@ -326,6 +326,7 @@
       <button class="tab-btn" onclick="switchTab('positions')">Posições</button>
       <button class="tab-btn" onclick="switchTab('mat-table')">Vencimentos</button>
       <button class="tab-btn" onclick="switchTab('mudancas')">Mudanças</button>
+      <button class="tab-btn" onclick="switchTab('movs')">Movs</button>
       <button class="tab-btn" onclick="switchTab('liquidez')">Liquidez</button>
     </div>
 
@@ -436,6 +437,44 @@
                 </tr>
               </thead>
               <tbody id="mud-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Movs -->
+    <div id="view-movs" class="tab-view">
+      <div class="card table-card">
+        <div class="table-head">
+          <div>
+            <span class="table-title">Movimentações de Quantidade</span>
+            <span class="table-count" id="movs-count"></span>
+          </div>
+          <span id="movs-dates" style="font-size:0.78rem;color:var(--text-muted)"></span>
+        </div>
+        <div id="movs-state" class="state-box">
+          <div class="state-icon">📊</div>
+          <div class="state-msg">Selecione uma data e clique em <strong>Buscar</strong> para carregar.</div>
+        </div>
+        <div id="movs-wrap" style="display:none">
+          <div class="table-wrapper">
+            <table id="movs-table">
+              <thead>
+                <tr>
+                  <th class="no-sort">Período</th>
+                  <th class="no-sort">Cód. Cliente</th>
+                  <th class="no-sort">Conta</th>
+                  <th class="no-sort">Conta BTG</th>
+                  <th class="no-sort">Nome Cliente</th>
+                  <th class="no-sort">Ativo</th>
+                  <th class="no-sort">Indexador</th>
+                  <th class="no-sort" style="text-align:right">Anterior</th>
+                  <th class="no-sort" style="text-align:right">Atual</th>
+                  <th class="no-sort" style="text-align:right">Δ Qtd</th>
+                </tr>
+              </thead>
+              <tbody id="movs-body"></tbody>
             </table>
           </div>
         </div>
@@ -753,7 +792,7 @@
   /* TABS */
   function switchTab(name) {
     activeTab = name;
-    const TAB_NAMES = ['asset-alloc','positions','mat-table','mudancas','liquidez'];
+    const TAB_NAMES = ['asset-alloc','positions','mat-table','mudancas','movs','liquidez'];
     document.querySelectorAll('.tab-btn').forEach((b, i) => b.classList.toggle('active', TAB_NAMES[i] === name));
     document.querySelectorAll('.tab-view').forEach(v => v.classList.remove('active'));
     document.getElementById('view-' + name).classList.add('active');
@@ -764,6 +803,7 @@
     else if (name === 'mat-table') renderMatTable();
     else if (name === 'asset-alloc') renderAssetAlloc();
     else if (name === 'mudancas') renderMudancas();
+    else if (name === 'movs') renderMovs();
     else if (name === 'liquidez') renderLiquidez();
   }
 
@@ -1672,6 +1712,190 @@
       mudStateEl.innerHTML = `<div class="state-icon">⚠️</div><div class="state-msg">Erro ao comparar posições: ${err.message || String(err)}</div>`;
       mudStateEl.style.display = 'block';
       mudWrapEl.style.display  = 'none';
+    }
+  }
+
+  /* RENDER: MOVS */
+  function aggregateAssetQtd(rows) {
+    const map = {};
+    rows.filter(p => p.classe !== 'Caixa').forEach(p => {
+      const assetKey = [
+        p.conta_btg || '',
+        p.nome || '',
+        p.taxa != null ? p.taxa : '',
+        p.vencimento || ''
+      ].join('\x00');
+      if (!map[assetKey]) {
+        const ci = clientMap[p.conta_btg] || {};
+        map[assetKey] = {
+          conta_btg:    p.conta_btg || '',
+          client_code:  ci.client_code || p.client_code || '',
+          conta:        ci.conta || p.conta || '',
+          nome_cliente: ci.nome || '',
+          banker:       ci.banker || p.banker || '',
+          nome:         p.nome || '',
+          codigo:       p.codigo || '',
+          classe:       p.classe || '',
+          indexador:    resolveIndexador(p),
+          totalQtd:     0,
+        };
+      }
+      map[assetKey].totalQtd += parseFloat(p.quantidade) || 0;
+    });
+    return map;
+  }
+
+  function fmtQtyDelta(v) {
+    const n = parseFloat(v);
+    if (isNaN(n)) return '—';
+    const abs = n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 6 });
+    return (n >= 0 ? '+' : '') + abs;
+  }
+
+  async function renderMovs() {
+    const movsStateEl = document.getElementById('movs-state');
+    const movsWrapEl  = document.getElementById('movs-wrap');
+    movsStateEl.innerHTML = `<div class="spinner"></div><div class="state-msg">Buscando últimos 5 dias úteis…</div>`;
+    movsStateEl.style.display = 'block';
+    movsWrapEl.style.display = 'none';
+
+    const selDate = document.getElementById('f-date').value;
+    if (!selDate) {
+      movsStateEl.innerHTML = `<div class="state-icon">📊</div><div class="state-msg">Selecione uma data e clique em <strong>Buscar</strong> para carregar.</div>`;
+      return;
+    }
+    if (filteredRows.length === 0) {
+      movsStateEl.innerHTML = `<div class="state-icon">🔍</div><div class="state-msg">Sem dados para a data selecionada.</div>`;
+      return;
+    }
+
+    const days = buildLastNWorkingDays(selDate, 5);
+    if (days.length < 2) {
+      movsStateEl.innerHTML = `<div class="state-icon">🔍</div><div class="state-msg">Não foi possível encontrar dias úteis anteriores a ${selDate}.</div>`;
+      return;
+    }
+
+    try {
+      const banker   = document.getElementById('f-banker').value;
+      const contaBtg = document.getElementById('f-client').value;
+      let contaList  = null;
+      if (contaBtg) {
+        contaList = [contaBtg];
+      } else if (banker) {
+        contaList = allClients.filter(c => c.banker === banker && c.conta_btg).map(c => c.conta_btg);
+      }
+
+      const prevDays = days.slice(0, days.length - 1);
+      const dayDataMap = {};
+
+      await Promise.all(prevDays.map(async dt => {
+        let q = sb.from('tb_btg_position')
+          .select('conta_btg, codigo, nome, quantidade, indexador, classe, taxa, vencimento')
+          .eq('data', dt);
+        if (contaList && contaList.length > 0) q = q.in('conta_btg', contaList);
+        const PAGE = 1000; let from = 0, raw = [];
+        while (true) {
+          const { data, error } = await q.range(from, from + PAGE - 1);
+          if (error) throw error;
+          if (!data || data.length === 0) break;
+          raw = raw.concat(data);
+          if (data.length < PAGE) break;
+          from += PAGE;
+        }
+        const mapped = raw.map(p => {
+          const key = p.conta_btg ? p.conta_btg.trim() : p.conta_btg;
+          const ci  = clientMap[key] || {};
+          return { ...p, conta_btg: key, banker: ci.banker || '' };
+        }).filter(p => p.banker);
+        if (mapped.length > 0) dayDataMap[dt] = mapped;
+      }));
+
+      dayDataMap[selDate] = filteredRows;
+
+      const aggByDay = {};
+      days.forEach(dt => {
+        if (dayDataMap[dt]) aggByDay[dt] = aggregateAssetQtd(dayDataMap[dt]);
+      });
+
+      const rows = [];
+
+      for (let i = 0; i < days.length - 1; i++) {
+        const dPrev = days[i];
+        const dCurr = days[i + 1];
+        if (!aggByDay[dPrev] && !aggByDay[dCurr]) continue;
+        const prevAgg = aggByDay[dPrev] || {};
+        const currAgg = aggByDay[dCurr] || {};
+        const allKeys = new Set([...Object.keys(prevAgg), ...Object.keys(currAgg)]);
+
+        const [py, pm, pd] = dPrev.split('-');
+        const [cy, cm, cd] = dCurr.split('-');
+        const periodLabel = `${pd}/${pm} → ${cd}/${cm}`;
+
+        allKeys.forEach(key => {
+          const prev  = prevAgg[key] || { totalQtd: 0 };
+          const curr  = currAgg[key] || { totalQtd: 0 };
+          const delta = curr.totalQtd - prev.totalQtd;
+
+          if (Math.abs(delta) > 0) {
+            const info = currAgg[key] || prevAgg[key];
+            rows.push({
+              periodLabel,
+              pairIdx:      i,
+              conta_btg:    info.conta_btg,
+              client_code:  info.client_code,
+              conta:        info.conta,
+              nome_cliente: info.nome_cliente,
+              nome:         info.nome,
+              codigo:       info.codigo,
+              classe:       info.classe,
+              indexador:    info.indexador,
+              prevQtd:      prev.totalQtd,
+              currQtd:      curr.totalQtd,
+              delta,
+            });
+          }
+        });
+      }
+
+      rows.sort((a, b) => {
+        if (b.pairIdx !== a.pairIdx) return b.pairIdx - a.pairIdx;
+        return Math.abs(b.delta) - Math.abs(a.delta);
+      });
+
+      const [fy, fm, fd] = days[0].split('-');
+      const [ly, lm, ld] = days[days.length - 1].split('-');
+      const rangeLabel = `${fd}/${fm}/${fy} — ${ld}/${lm}/${ly}`;
+
+      if (!rows.length) {
+        movsStateEl.innerHTML = `<div class="state-icon">✓</div><div class="state-msg">Nenhuma variação de quantidade nos últimos ${days.length} dias úteis (${rangeLabel}).</div>`;
+        return;
+      }
+
+      movsStateEl.style.display = 'none';
+      movsWrapEl.style.display  = 'block';
+      document.getElementById('movs-count').textContent = ` — ${rows.length} ocorrência${rows.length !== 1 ? 's' : ''}`;
+      document.getElementById('movs-dates').textContent  = rangeLabel;
+
+      document.getElementById('movs-body').innerHTML = rows.map(c => {
+        const deltaClass = c.delta >= 0 ? 'td-positive' : 'td-negative';
+        return `<tr>
+          <td class="td-muted td-mono" style="white-space:nowrap">${x(c.periodLabel)}</td>
+          <td><span class="badge">${x(c.client_code)}</span></td>
+          <td>${x(c.conta)}</td>
+          <td class="td-muted td-mono">${x(c.conta_btg)}</td>
+          <td>${x(c.nome_cliente)}</td>
+          <td class="td-ativo" title="${c.nome != null ? String(c.nome).replace(/"/g,'&quot;') : ''}">${x(c.nome)}</td>
+          <td class="td-muted">${x(c.indexador)}</td>
+          <td class="td-right td-muted">${fmtQty(c.prevQtd)}</td>
+          <td class="td-right">${fmtQty(c.currQtd)}</td>
+          <td class="td-right ${deltaClass}"><strong>${fmtQtyDelta(c.delta)}</strong></td>
+        </tr>`;
+      }).join('');
+
+    } catch (err) {
+      movsStateEl.innerHTML = `<div class="state-icon">⚠️</div><div class="state-msg">Erro ao comparar posições: ${err.message || String(err)}</div>`;
+      movsStateEl.style.display = 'block';
+      movsWrapEl.style.display  = 'none';
     }
   }
 
