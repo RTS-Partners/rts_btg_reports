@@ -587,7 +587,8 @@
   // helper: resolve indexador for a position row (prefer tb_classificacao_ativos, fallback to position's own indexador)
   function resolveIndexador(p) {
     const cls = (p.codigo && classificacaoMap[p.codigo.trim()]) || (p.nome && classificacaoMap[p.nome.trim()]);
-    return (cls && cls.indexador) || p.indexador || 'Não Classificado';
+    const idx = (cls && cls.indexador) || p.indexador || 'Não Classificado';
+    return idx === 'CDI' ? 'Pós-Fixado' : idx;
   }
 
   // helper: is this position Onshore?
