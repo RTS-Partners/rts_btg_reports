@@ -511,6 +511,9 @@
     const password = document.getElementById('inp-password').value;
     const errEl = document.getElementById('login-error'), btn = document.getElementById('login-btn');
     errEl.style.display = 'none'; btn.textContent = 'Entrando…'; btn.disabled = true;
+    if (!email.toLowerCase().endsWith('@rtspartners.com.br')) {
+      errEl.textContent = 'Acesso restrito a usuários @rtspartners.com.br.'; errEl.style.display = 'block'; btn.textContent = 'Entrar'; btn.disabled = false; return;
+    }
     const { data, error } = await sb.auth.signInWithPassword({ email, password });
     if (error) { errEl.textContent = error.message || 'E-mail ou senha incorretos.'; errEl.style.display = 'block'; btn.textContent = 'Entrar'; btn.disabled = false; return; }
     if (!appReady) { appReady = true; await enterApp(data.user); }
@@ -533,6 +536,12 @@
   }
 
   async function enterApp(user) {
+    if (!user.email || !user.email.toLowerCase().endsWith('@rtspartners.com.br')) {
+      await sb.auth.signOut();
+      const errEl = document.getElementById('login-error');
+      errEl.textContent = 'Acesso restrito a usuários @rtspartners.com.br.'; errEl.style.display = 'block';
+      appReady = false; return;
+    }
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('app-screen').style.display = 'block';
     document.getElementById('hdr-email').textContent = user.email;
