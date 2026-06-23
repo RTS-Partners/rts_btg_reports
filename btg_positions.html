@@ -115,6 +115,8 @@
     .td-right { text-align: right; font-variant-numeric: tabular-nums; }
     .td-muted { color: var(--text-muted); }
     .td-mono  { font-family: 'Consolas', 'Courier New', monospace; font-size: 0.78rem; }
+    .td-positive { color: #5AC27A; }
+    .td-negative { color: var(--red); }
     .td-ativo   { max-width: 145px; overflow: hidden; text-overflow: ellipsis; }
     .td-emissor   { max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
     .td-indexador { max-width: 65px;  overflow: hidden; text-overflow: ellipsis; }
@@ -323,7 +325,7 @@
       <button class="tab-btn active" onclick="switchTab('asset-alloc')">Asset Allocation</button>
       <button class="tab-btn" onclick="switchTab('positions')">Posições</button>
       <button class="tab-btn" onclick="switchTab('mat-table')">Vencimentos</button>
-
+      <button class="tab-btn" onclick="switchTab('mudancas')">Mudanças</button>
     </div>
 
     <!-- Posições -->
@@ -395,6 +397,44 @@
                 <canvas id="mat-bar-canvas"></canvas>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mudanças -->
+    <div id="view-mudancas" class="tab-view">
+      <div class="card table-card">
+        <div class="table-head">
+          <div>
+            <span class="table-title">Variações entre Dias Úteis</span>
+            <span class="table-count" id="mud-count"></span>
+          </div>
+          <span id="mud-dates" style="font-size:0.78rem;color:var(--text-muted)"></span>
+        </div>
+        <div id="mud-state" class="state-box">
+          <div class="state-icon">📈</div>
+          <div class="state-msg">Selecione uma data e clique em <strong>Buscar</strong> para carregar.</div>
+        </div>
+        <div id="mud-wrap" style="display:none">
+          <div class="table-wrapper">
+            <table id="mud-table">
+              <thead>
+                <tr>
+                  <th class="no-sort">Cód. Cliente</th>
+                  <th class="no-sort">Conta</th>
+                  <th class="no-sort">Conta BTG</th>
+                  <th class="no-sort">Nome</th>
+                  <th class="no-sort" style="text-align:right">Bruto D-1</th>
+                  <th class="no-sort" style="text-align:right">Bruto D</th>
+                  <th class="no-sort" style="text-align:right">Δ Bruto</th>
+                  <th class="no-sort" style="text-align:right">Pós-Fix. D-1</th>
+                  <th class="no-sort" style="text-align:right">Pós-Fix. D</th>
+                  <th class="no-sort" style="text-align:right">Δ Pós-Fix.</th>
+                </tr>
+              </thead>
+              <tbody id="mud-body"></tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -652,7 +692,7 @@
   /* TABS */
   function switchTab(name) {
     activeTab = name;
-    const TAB_NAMES = ['asset-alloc','positions','mat-table'];
+    const TAB_NAMES = ['asset-alloc','positions','mat-table','mudancas'];
     document.querySelectorAll('.tab-btn').forEach((b, i) => b.classList.toggle('active', TAB_NAMES[i] === name));
     document.querySelectorAll('.tab-view').forEach(v => v.classList.remove('active'));
     document.getElementById('view-' + name).classList.add('active');
@@ -662,6 +702,7 @@
     if (name === 'positions') render();
     else if (name === 'mat-table') renderMatTable();
     else if (name === 'asset-alloc') renderAssetAlloc();
+    else if (name === 'mudancas') renderMudancas();
   }
 
   /* FETCH + FILTER */
@@ -717,6 +758,11 @@
     document.getElementById('alloc-state').style.display = 'block';
     document.getElementById('alloc-state').innerHTML = `<div class="state-icon">📊</div><div class="state-msg">Selecione uma data e clique em <strong>Buscar</strong> para carregar.</div>`;
     if (allocChart) { allocChart.destroy(); allocChart = null; }
+    document.getElementById('mud-wrap').style.display = 'none';
+    document.getElementById('mud-state').style.display = 'block';
+    document.getElementById('mud-state').innerHTML = `<div class="state-icon">📈</div><div class="state-msg">Selecione uma data e clique em <strong>Buscar</strong> para carregar.</div>`;
+    document.getElementById('mud-count').textContent = '';
+    document.getElementById('mud-dates').textContent = '';
   }
 
   /* SORT */
@@ -1365,6 +1411,170 @@
 
   function closeMatDrilldown() {
     document.getElementById('mat-drill-overlay').classList.remove('open');
+  }
+
+  /* RENDER: MUDANÇAS */
+  function fmtDelta(v) {
+    const n = parseFloat(v);
+    if (isNaN(n)) return '—';
+    const abs = n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return (n >= 0 ? '+' : '') + abs;
+  }
+
+  function aggregateClientTotals(rows) {
+    const map = {};
+    rows.forEach(p => {
+      const key = p.conta_btg;
+      if (!map[key]) {
+        const ci = clientMap[key] || {};
+        map[key] = {
+          conta_btg: key,
+          client_code: ci.client_code || p.client_code || '',
+          conta: ci.conta || p.conta || '',
+          nome_cliente: ci.nome || '',
+          banker: ci.banker || p.banker || '',
+          totalBruto: 0,
+          posFixado: 0,
+        };
+      }
+      const val = parseFloat(p.valor_bruto) || 0;
+      map[key].totalBruto += val;
+      if (resolveIndexador(p) === 'Pós-Fixado') map[key].posFixado += val;
+    });
+    return map;
+  }
+
+  async function renderMudancas() {
+    const mudStateEl = document.getElementById('mud-state');
+    const mudWrapEl  = document.getElementById('mud-wrap');
+    mudStateEl.innerHTML = `<div class="spinner"></div><div class="state-msg">Comparando com dia útil anterior…</div>`;
+    mudStateEl.style.display = 'block';
+    mudWrapEl.style.display = 'none';
+
+    const selDate = document.getElementById('f-date').value;
+    if (!selDate) {
+      mudStateEl.innerHTML = `<div class="state-icon">📈</div><div class="state-msg">Selecione uma data e clique em <strong>Buscar</strong> para carregar.</div>`;
+      return;
+    }
+    if (filteredRows.length === 0) {
+      mudStateEl.innerHTML = `<div class="state-icon">🔍</div><div class="state-msg">Sem dados para a data selecionada.</div>`;
+      return;
+    }
+
+    const twodays = buildLastNWorkingDays(selDate, 2);
+    if (twodays.length < 2) {
+      mudStateEl.innerHTML = `<div class="state-icon">🔍</div><div class="state-msg">Não foi possível encontrar o dia útil anterior a ${selDate}.</div>`;
+      return;
+    }
+    const prevDate = twodays[0];
+    const currDate = twodays[1];
+
+    try {
+      const banker   = document.getElementById('f-banker').value;
+      const contaBtg = document.getElementById('f-client').value;
+      let contaList  = null;
+      if (contaBtg) {
+        contaList = [contaBtg];
+      } else if (banker) {
+        contaList = allClients.filter(c => c.banker === banker && c.conta_btg).map(c => c.conta_btg);
+      }
+
+      let q = sb.from('tb_btg_position')
+        .select('conta_btg, codigo, nome, valor_bruto, indexador, classe')
+        .eq('data', prevDate);
+      if (contaList && contaList.length > 0) q = q.in('conta_btg', contaList);
+
+      const PAGE = 1000; let from = 0, prevRaw = [];
+      while (true) {
+        const { data, error } = await q.range(from, from + PAGE - 1);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        prevRaw = prevRaw.concat(data);
+        if (data.length < PAGE) break;
+        from += PAGE;
+      }
+
+      const prevMapped = prevRaw.map(p => {
+        const key = p.conta_btg ? p.conta_btg.trim() : p.conta_btg;
+        const ci  = clientMap[key] || {};
+        return { ...p, conta_btg: key, banker: ci.banker || '' };
+      }).filter(p => p.banker);
+
+      const currMap = aggregateClientTotals(filteredRows);
+      const prevMap = aggregateClientTotals(prevMapped);
+
+      const THRESHOLD = 300000;
+      const allKeys   = new Set([...Object.keys(currMap), ...Object.keys(prevMap)]);
+      const changes   = [];
+
+      allKeys.forEach(key => {
+        const curr = currMap[key] || { totalBruto: 0, posFixado: 0 };
+        const prev = prevMap[key] || { totalBruto: 0, posFixado: 0 };
+        const deltaBruto     = curr.totalBruto - prev.totalBruto;
+        const deltaPosFixado = curr.posFixado   - prev.posFixado;
+
+        if (Math.abs(deltaBruto) >= THRESHOLD || Math.abs(deltaPosFixado) >= THRESHOLD) {
+          const info = currMap[key] || prevMap[key];
+          changes.push({
+            conta_btg:     key,
+            client_code:   info.client_code,
+            conta:         info.conta,
+            nome_cliente:  info.nome_cliente,
+            banker:        info.banker,
+            prevBruto:     prev.totalBruto,
+            currBruto:     curr.totalBruto,
+            deltaBruto,
+            prevPosFixado: prev.posFixado,
+            currPosFixado: curr.posFixado,
+            deltaPosFixado,
+          });
+        }
+      });
+
+      changes.sort((a, b) =>
+        Math.max(Math.abs(b.deltaBruto), Math.abs(b.deltaPosFixado)) -
+        Math.max(Math.abs(a.deltaBruto), Math.abs(a.deltaPosFixado))
+      );
+
+      const [py, pm, pd] = prevDate.split('-');
+      const [cy, cm, cd] = currDate.split('-');
+      const prevLabel = `${pd}/${pm}/${py}`;
+      const currLabel = `${cd}/${cm}/${cy}`;
+
+      if (!changes.length) {
+        mudStateEl.innerHTML = `<div class="state-icon">✓</div><div class="state-msg">Nenhuma variação igual ou superior a R$ 300.000 entre ${prevLabel} e ${currLabel}.</div>`;
+        return;
+      }
+
+      mudStateEl.style.display = 'none';
+      mudWrapEl.style.display  = 'block';
+      document.getElementById('mud-count').textContent = ` — ${changes.length} cliente${changes.length !== 1 ? 's' : ''}`;
+      document.getElementById('mud-dates').textContent  = `${prevLabel} → ${currLabel}`;
+
+      document.getElementById('mud-body').innerHTML = changes.map(c => {
+        const brutoSig   = Math.abs(c.deltaBruto) >= THRESHOLD;
+        const posFixSig  = Math.abs(c.deltaPosFixado) >= THRESHOLD;
+        const brutoClass = brutoSig  ? (c.deltaBruto     >= 0 ? 'td-positive' : 'td-negative') : 'td-muted';
+        const pfClass    = posFixSig ? (c.deltaPosFixado >= 0 ? 'td-positive' : 'td-negative') : 'td-muted';
+        return `<tr>
+          <td><span class="badge">${x(c.client_code)}</span></td>
+          <td>${x(c.conta)}</td>
+          <td class="td-muted td-mono">${x(c.conta_btg)}</td>
+          <td>${x(c.nome_cliente)}</td>
+          <td class="td-right td-muted">${fmtBRLPlain(c.prevBruto)}</td>
+          <td class="td-right">${fmtBRLPlain(c.currBruto)}</td>
+          <td class="td-right ${brutoClass}"><strong>${fmtDelta(c.deltaBruto)}</strong></td>
+          <td class="td-right td-muted">${fmtBRLPlain(c.prevPosFixado)}</td>
+          <td class="td-right">${fmtBRLPlain(c.currPosFixado)}</td>
+          <td class="td-right ${pfClass}"><strong>${fmtDelta(c.deltaPosFixado)}</strong></td>
+        </tr>`;
+      }).join('');
+
+    } catch (err) {
+      mudStateEl.innerHTML = `<div class="state-icon">⚠️</div><div class="state-msg">Erro ao comparar posições: ${err.message || String(err)}</div>`;
+      mudStateEl.style.display = 'block';
+      mudWrapEl.style.display  = 'none';
+    }
   }
 </script>
 </body>
