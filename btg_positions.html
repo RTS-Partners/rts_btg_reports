@@ -659,16 +659,31 @@
     });
   }
 
+  // extracts ticker from crypto names like "Bitcoin (XBT)" → "XBT"
+  function cryptoTicker(nome) {
+    if (!nome) return null;
+    const s = nome.trim();
+    if (s.length >= 5 && s[s.length - 5] === '(' && s[s.length - 1] === ')') return s.slice(-4, -1);
+    return null;
+  }
+
+  function resolveClassificacao(p) {
+    const ticker = cryptoTicker(p.nome);
+    return (p.codigo && classificacaoMap[p.codigo.trim()]) ||
+           (p.nome && classificacaoMap[p.nome.trim()]) ||
+           (ticker && classificacaoMap[ticker]) || null;
+  }
+
   // helper: resolve indexador for a position row (prefer tb_classificacao_ativos, fallback to position's own indexador)
   function resolveIndexador(p) {
-    const cls = (p.codigo && classificacaoMap[p.codigo.trim()]) || (p.nome && classificacaoMap[p.nome.trim()]);
+    const cls = resolveClassificacao(p);
     const idx = (cls && cls.indexador) || p.indexador || 'Não Classificado';
     return idx === 'CDI' ? 'Pós-Fixado' : idx;
   }
 
   // helper: is this position Onshore?
   function isOnshore(p) {
-    const cls = (p.codigo && classificacaoMap[p.codigo.trim()]) || (p.nome && classificacaoMap[p.nome.trim()]);
+    const cls = resolveClassificacao(p);
     if (!cls) return true; // no classification → assume onshore
     const onOff = (cls.on_off || '').toLowerCase();
     return onOff === '' || onOff === 'onshore' || onOff === 'on';
