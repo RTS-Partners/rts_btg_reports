@@ -301,17 +301,14 @@
     </div>
 
     <div class="tab-bar">
-      <button class="tab-btn active" onclick="switchTab('positions')">Posições</button>
-      <button class="tab-btn" onclick="switchTab('by-class')">Por Classe</button>
-      <button class="tab-btn" onclick="switchTab('by-banker')">Por Banker</button>
-      <button class="tab-btn" onclick="switchTab('maturities')">Vencimentos</button>
-      <button class="tab-btn" onclick="switchTab('mat-table')">Ladder de Venc.</button>
-      <button class="tab-btn" onclick="switchTab('asset-alloc')">Asset Allocation</button>
+      <button class="tab-btn active" onclick="switchTab('asset-alloc')">Asset Allocation</button>
+      <button class="tab-btn" onclick="switchTab('positions')">Posições</button>
+      <button class="tab-btn" onclick="switchTab('mat-table')">Vencimentos</button>
 
     </div>
 
     <!-- Posições -->
-    <div id="view-positions" class="tab-view active">
+    <div id="view-positions" class="tab-view">
       <div class="card table-card">
         <div class="table-head">
           <div>
@@ -348,52 +345,7 @@
       </div>
     </div>
 
-    <!-- Por Classe -->
-    <div id="view-by-class" class="tab-view">
-      <div class="card table-card">
-        <div class="table-head"><span class="table-title">Alocação por Classe de Ativo</span></div>
-        <div id="cls-state" class="state-box">
-          <div class="state-icon">📊</div>
-          <div class="state-msg">Selecione uma data e clique em <strong>Buscar</strong> para carregar.</div>
-        </div>
-        <div id="cls-chart-wrap" style="display:none" class="chart-layout">
-          <div class="chart-canvas-wrap"><canvas id="cls-canvas" width="280" height="280"></canvas></div>
-          <div id="cls-legend" class="chart-legend"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Por Banker -->
-    <div id="view-by-banker" class="tab-view">
-      <div class="card table-card">
-        <div class="table-head"><span class="table-title">Desempenho por Banker</span></div>
-        <div id="bnk-state" class="state-box">
-          <div class="state-icon">👤</div>
-          <div class="state-msg">Selecione uma data e clique em <strong>Buscar</strong> para carregar.</div>
-        </div>
-        <div id="bnk-chart-wrap" style="display:none" class="chart-layout">
-          <div class="chart-canvas-wrap"><canvas id="bnk-canvas" width="280" height="280"></canvas></div>
-          <div id="bnk-legend" class="chart-legend"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Ladder de Venc. (antigo) -->
-    <div id="view-maturities" class="tab-view">
-      <div class="card table-card">
-        <div class="table-head"><span class="table-title">Ladder de Vencimentos</span></div>
-        <div id="mat-state" class="state-box">
-          <div class="state-icon">📅</div>
-          <div class="state-msg">Selecione uma data e clique em <strong>Buscar</strong> para carregar.</div>
-        </div>
-        <div id="mat-chart-wrap" style="display:none" class="chart-layout">
-          <div class="chart-canvas-wrap"><canvas id="mat-canvas" width="280" height="280"></canvas></div>
-          <div id="mat-legend" class="chart-legend"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Vencimentos por Ano (novo) -->
+    <!-- Vencimentos por Ano -->
     <div id="view-mat-table" class="tab-view">
       <div class="card table-card">
         <div class="table-head"><span class="table-title">Vencimentos por Ano</span><span class="table-count" id="mat-tbl-count"></span></div>
@@ -429,8 +381,8 @@
       </div>
     </div>
 
-    <!-- Asset Allocation 12 meses (novo) -->
-    <div id="view-asset-alloc" class="tab-view">
+    <!-- Asset Allocation -->
+    <div id="view-asset-alloc" class="tab-view active">
       <div class="card table-card">
         <div class="table-head"><span class="table-title">Asset Allocation — 5 Dias</span></div>
         <div id="alloc-state" class="state-box">
@@ -462,7 +414,7 @@
   let defaultDate = null;
   let allPositions = [], filteredRows = [];
   let sortCol = null, sortDir = 'asc';
-  let activeTab = 'positions';
+  let activeTab = 'asset-alloc';
   let clsChart = null, bnkChart = null, matChart = null, matBarChart = null, allocChart = null;
   let classificacaoMap = {};   // codigo → {indexador, on_off, ...}
 
@@ -617,7 +569,7 @@
   /* TABS */
   function switchTab(name) {
     activeTab = name;
-    const TAB_NAMES = ['positions','by-class','by-banker','maturities','mat-table','asset-alloc'];
+    const TAB_NAMES = ['asset-alloc','positions','mat-table'];
     document.querySelectorAll('.tab-btn').forEach((b, i) => b.classList.toggle('active', TAB_NAMES[i] === name));
     document.querySelectorAll('.tab-view').forEach(v => v.classList.remove('active'));
     document.getElementById('view-' + name).classList.add('active');
@@ -625,9 +577,6 @@
   }
   function renderTab(name) {
     if (name === 'positions') render();
-    else if (name === 'by-class') renderByClass();
-    else if (name === 'by-banker') renderByBanker();
-    else if (name === 'maturities') renderMaturities();
     else if (name === 'mat-table') renderMatTable();
     else if (name === 'asset-alloc') renderAssetAlloc();
   }
