@@ -546,8 +546,8 @@
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('app-screen').style.display = 'block';
     document.getElementById('hdr-email').textContent = user.email;
-    const [latestDate] = await Promise.all([loadLatestDate(), loadClients(), loadClassificacao()]);
-    defaultDate = latestDate || lastWorkingDay();
+    await Promise.all([loadHolidays(), loadClients(), loadClassificacao()]);
+    defaultDate = lastWorkingDay();
     document.getElementById('f-date').value = defaultDate;
     buildBankerDropdown(); rebuildClientDropdown();
     applyFilters();
