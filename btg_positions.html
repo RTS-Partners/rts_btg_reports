@@ -653,7 +653,9 @@
   function applyClientFilter() {
     const banker = document.getElementById('f-banker').value, contaBtg = document.getElementById('f-client').value;
     filteredRows = allPositions.filter(p => { if (!p.banker) return false; if (banker && p.banker !== banker) return false; if (contaBtg && p.conta_btg !== contaBtg) return false; return true; });
-    sortApply(); renderSummary(); renderTab(activeTab);
+    sortApply(); renderSummary();
+    render(); // always clear positions loading state regardless of active tab
+    if (activeTab !== 'positions') renderTab(activeTab);
   }
   function clearFilters() {
     document.getElementById('f-date').value = defaultDate || lastWorkingDay();
@@ -663,14 +665,8 @@
     document.getElementById('f-caixa-btg').checked = false;
     sortCol = null; sortDir = 'asc';
     clearSummary(); setStateEmpty();
-    ['cls','bnk','mat'].forEach(p => {
-      document.getElementById(p + '-chart-wrap').style.display = 'none';
-      document.getElementById(p + '-state').style.display = 'block';
-      document.getElementById(p + '-state').innerHTML = emptyPrompt();
-    });
-    [clsChart, bnkChart, matChart, matBarChart].forEach(c => { if (c) c.destroy(); });
-    clsChart = bnkChart = matChart = matBarChart = null;
-    // reset new tabs
+    [matBarChart].forEach(c => { if (c) c.destroy(); });
+    matBarChart = null;
     document.getElementById('mat-tbl-wrap').style.display = 'none';
     document.getElementById('mat-tbl-state').style.display = 'block';
     document.getElementById('mat-tbl-state').innerHTML = `<div class="state-icon">📅</div><div class="state-msg">Selecione uma data e clique em <strong>Buscar</strong> para carregar.</div>`;
@@ -954,12 +950,26 @@
 
   /* RENDER: ASSET ALLOCATION 12 MONTHS STACKED BAR */
   async function renderAssetAlloc() {
-    document.getElementById('alloc-state').innerHTML = `<div class="spinner"></div><div class="state-msg">Buscando últimos 5 dias…</div>`;
-    document.getElementById('alloc-state').style.display = 'block';
-    document.getElementById('alloc-wrap').style.display = 'none';
+    const allocStateEl = document.getElementById('alloc-state');
+    const allocWrapEl  = document.getElementById('alloc-wrap');
+    allocStateEl.innerHTML = `<div class="spinner"></div><div class="state-msg">Buscando últimos 5 dias…</div>`;
+    allocStateEl.style.display = 'block';
+    allocWrapEl.style.display = 'none';
 
+    const noData = msg => {
+      allocStateEl.innerHTML = `<div class="state-icon">🔍</div><div class="state-msg">${msg}</div>`;
+    };
+    const errState = msg => {
+      allocStateEl.innerHTML = `<div class="state-icon">⚠️</div><div class="state-msg">Erro ao carregar gráfico: ${msg}</div>`;
+    };
+
+    try {
     const selDate = document.getElementById('f-date').value;
-    if (!selDate) return;
+    if (!selDate) { noData('Selecione uma data e clique em <strong>Buscar</strong> para carregar.'); return; }
+
+    // If the positions fetch already returned 0 rows for this date, end immediately
+    if (allPositions.length === 0) { noData('Sem dados para a data selecionada.'); return; }
+
     const days = buildLastNWorkingDays(selDate, 5);
 
     const banker = document.getElementById('f-banker').value;
@@ -991,10 +1001,7 @@
     }
 
     const datesWithData = days.filter(d => allocData[d]);
-    if (datesWithData.length === 0) {
-      document.getElementById('alloc-state').innerHTML = `<div class="state-icon">🔍</div><div class="state-msg">Sem dados nos últimos 5 dias úteis.</div>`;
-      return;
-    }
+    if (datesWithData.length === 0) { noData('Sem dados nos últimos 5 dias úteis.'); return; }
 
     // Collect all indexadores; "Não Classificado" always last
     const UNCLASSIFIED = 'Não Classificado';
@@ -1184,6 +1191,7 @@
         <span style="${isUnclass ? 'color:#FF3B3B;font-weight:700' : ''}">${idx}</span>
       </div>`;
     }).join('');
+    } catch (err) { errState(err.message || String(err)); }
   }
 
   // Build list of the last n working days (Mon–Fri, excluding tb_feriados) up to and including selDateStr
