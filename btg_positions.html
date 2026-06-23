@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
@@ -139,6 +139,29 @@
     .state-msg strong { color: var(--text); }
     .spinner { width: 28px; height: 28px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.65s linear infinite; margin: 0 auto 0.75rem; }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* MATURITY TABLE */
+    .mat-table-wrap { overflow-x: auto; }
+    .mat-year-table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+    .mat-year-table thead th { background: #242220; padding: 0.6rem 1rem; text-align: left; font-size: 0.68rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    .mat-year-table thead th.num { text-align: right; }
+    .mat-year-table tbody tr { border-bottom: 1px solid var(--border); transition: background 0.08s; }
+    .mat-year-table tbody tr:hover { background: #252320; }
+    .mat-year-table tbody td { padding: 0.55rem 1rem; white-space: nowrap; }
+    .mat-year-table tbody td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .mat-year-table tfoot td { padding: 0.6rem 1rem; background: #1E1D1B; border-top: 2px solid var(--border); font-weight: 700; font-variant-numeric: tabular-nums; }
+    .mat-year-table tfoot td.num { text-align: right; }
+    .pct-bar-wrap { display: flex; align-items: center; gap: 0.6rem; }
+    .pct-bar-bg { flex: 1; max-width: 120px; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+    .pct-bar-fill { height: 100%; background: var(--primary); border-radius: 3px; transition: width 0.3s; }
+    .pct-text { min-width: 42px; text-align: right; color: var(--text-muted); font-size: 0.78rem; }
+
+    /* ASSET ALLOCATION CHART */
+    .alloc-controls { display: flex; align-items: center; gap: 1rem; padding: 0.85rem 1.25rem; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+    .alloc-canvas-wrap { padding: 1.25rem; position: relative; }
+    .alloc-legend { padding: 0 1.25rem 1.25rem; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .alloc-legend-item { display: flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; color: var(--text-muted); }
+    .alloc-legend-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
 
     /* RESPONSIVE */
     @media (max-width: 900px) {
@@ -282,6 +305,8 @@
       <button class="tab-btn" onclick="switchTab('by-class')">Por Classe</button>
       <button class="tab-btn" onclick="switchTab('by-banker')">Por Banker</button>
       <button class="tab-btn" onclick="switchTab('maturities')">Vencimentos</button>
+      <button class="tab-btn" onclick="switchTab('mat-table')">Ladder de Venc.</button>
+      <button class="tab-btn" onclick="switchTab('asset-alloc')">Asset Allocation</button>
 
     </div>
 
@@ -353,7 +378,7 @@
       </div>
     </div>
 
-    <!-- Vencimentos -->
+    <!-- Ladder de Venc. (antigo) -->
     <div id="view-maturities" class="tab-view">
       <div class="card table-card">
         <div class="table-head"><span class="table-title">Ladder de Vencimentos</span></div>
@@ -364,6 +389,51 @@
         <div id="mat-chart-wrap" style="display:none" class="chart-layout">
           <div class="chart-canvas-wrap"><canvas id="mat-canvas" width="280" height="280"></canvas></div>
           <div id="mat-legend" class="chart-legend"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Vencimentos por Ano (novo) -->
+    <div id="view-mat-table" class="tab-view">
+      <div class="card table-card">
+        <div class="table-head"><span class="table-title">Vencimentos por Ano</span><span class="table-count" id="mat-tbl-count"></span></div>
+        <div id="mat-tbl-state" class="state-box">
+          <div class="state-icon">📅</div>
+          <div class="state-msg">Selecione uma data e clique em <strong>Buscar</strong> para carregar.</div>
+        </div>
+        <div id="mat-tbl-wrap" style="display:none; padding: 1.25rem;">
+          <div class="mat-table-wrap">
+            <table class="mat-year-table">
+              <thead><tr>
+                <th>Ano</th>
+                <th class="num">Valor Bruto</th>
+                <th class="num">% PL</th>
+              </tr></thead>
+              <tbody id="mat-tbl-body"></tbody>
+              <tfoot><tr>
+                <td><strong>Total</strong></td>
+                <td class="num" id="mat-tbl-total"></td>
+                <td class="num">100,0%</td>
+              </tr></tfoot>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Asset Allocation 12 meses (novo) -->
+    <div id="view-asset-alloc" class="tab-view">
+      <div class="card table-card">
+        <div class="table-head"><span class="table-title">Asset Allocation — 5 Dias</span></div>
+        <div id="alloc-state" class="state-box">
+          <div class="state-icon">📊</div>
+          <div class="state-msg">Selecione uma data e clique em <strong>Buscar</strong> para carregar.</div>
+        </div>
+        <div id="alloc-wrap" style="display:none">
+          <div class="alloc-canvas-wrap">
+            <canvas id="alloc-canvas"></canvas>
+          </div>
+          <div class="alloc-legend" id="alloc-legend"></div>
         </div>
       </div>
     </div>
@@ -384,7 +454,8 @@
   let allPositions = [], filteredRows = [];
   let sortCol = null, sortDir = 'asc';
   let activeTab = 'positions';
-  let clsChart = null, bnkChart = null, matChart = null;
+  let clsChart = null, bnkChart = null, matChart = null, allocChart = null;
+  let classificacaoMap = {};   // codigo → {indexador, on_off, ...}
 
   const COL_IDX = {
     client_code:0, conta:1, conta_btg:2, classe:3, nome:4,
@@ -450,7 +521,8 @@
     document.getElementById('app-screen').style.display = 'block';
     document.getElementById('hdr-email').textContent = user.email;
     document.getElementById('f-date').value = lastWorkingDay();
-    await loadClients(); buildBankerDropdown(); rebuildClientDropdown();
+    await Promise.all([loadClients(), loadClassificacao()]);
+    buildBankerDropdown(); rebuildClientDropdown();
   }
 
   /* CLIENTS */
@@ -463,6 +535,41 @@
       clientMap[c.conta_btg] = { nome: c.nome||'', banker: c.banker||'', code: c.code||'', client_code: (c.banker && c.code) ? `${c.banker}-${c.code}` : '', id: c.id, conta: c.conta||'' };
     });
   }
+  /* CLASSIFICACAO */
+  async function loadClassificacao() {
+    const PAGE = 1000; let from = 0, all = [];
+    while (true) {
+      const { data, error } = await sb.from('tb_classificacao_ativos')
+        .select('codigo, ativo, indexador, on_off, vencimento, classe, direcionamento')
+        .range(from, from + PAGE - 1);
+      if (error) { console.error('loadClassificacao error:', error); break; }
+      if (!data || data.length === 0) break;
+      all = all.concat(data);
+      if (data.length < PAGE) break;
+      from += PAGE;
+    }
+    classificacaoMap = {};
+    all.forEach(r => {
+      if (r.codigo) classificacaoMap[r.codigo.trim()] = r;
+      // also index by ativo name as fallback
+      if (r.ativo) { const k = r.ativo.trim(); if (!classificacaoMap[k]) classificacaoMap[k] = r; }
+    });
+  }
+
+  // helper: resolve indexador for a position row (prefer tb_classificacao_ativos, fallback to position's own indexador)
+  function resolveIndexador(p) {
+    const cls = (p.codigo && classificacaoMap[p.codigo.trim()]) || (p.nome && classificacaoMap[p.nome.trim()]);
+    return (cls && cls.indexador) || p.indexador || 'Não Classificado';
+  }
+
+  // helper: is this position Onshore?
+  function isOnshore(p) {
+    const cls = (p.codigo && classificacaoMap[p.codigo.trim()]) || (p.nome && classificacaoMap[p.nome.trim()]);
+    if (!cls) return true; // no classification → assume onshore
+    const onOff = (cls.on_off || '').toLowerCase();
+    return onOff === '' || onOff === 'onshore' || onOff === 'on';
+  }
+
   function buildBankerDropdown() {
     const bankers = [...new Set(allClients.map(c => c.banker).filter(Boolean))].sort();
     const sel = document.getElementById('f-banker');
@@ -482,7 +589,8 @@
   /* TABS */
   function switchTab(name) {
     activeTab = name;
-    document.querySelectorAll('.tab-btn').forEach((b, i) => b.classList.toggle('active', ['positions','by-class','by-banker','maturities'][i] === name));
+    const TAB_NAMES = ['positions','by-class','by-banker','maturities','mat-table','asset-alloc'];
+    document.querySelectorAll('.tab-btn').forEach((b, i) => b.classList.toggle('active', TAB_NAMES[i] === name));
     document.querySelectorAll('.tab-view').forEach(v => v.classList.remove('active'));
     document.getElementById('view-' + name).classList.add('active');
     if (filteredRows.length) renderTab(name);
@@ -492,6 +600,8 @@
     else if (name === 'by-class') renderByClass();
     else if (name === 'by-banker') renderByBanker();
     else if (name === 'maturities') renderMaturities();
+    else if (name === 'mat-table') renderMatTable();
+    else if (name === 'asset-alloc') renderAssetAlloc();
   }
 
   /* FETCH + FILTER */
@@ -535,6 +645,14 @@
     });
     [clsChart, bnkChart, matChart].forEach(c => { if (c) c.destroy(); });
     clsChart = bnkChart = matChart = null;
+    // reset new tabs
+    document.getElementById('mat-tbl-wrap').style.display = 'none';
+    document.getElementById('mat-tbl-state').style.display = 'block';
+    document.getElementById('mat-tbl-state').innerHTML = `<div class="state-icon">📅</div><div class="state-msg">Selecione uma data e clique em <strong>Buscar</strong> para carregar.</div>`;
+    document.getElementById('alloc-wrap').style.display = 'none';
+    document.getElementById('alloc-state').style.display = 'block';
+    document.getElementById('alloc-state').innerHTML = `<div class="state-icon">📊</div><div class="state-msg">Selecione uma data e clique em <strong>Buscar</strong> para carregar.</div>`;
+    if (allocChart) { allocChart.destroy(); allocChart = null; }
   }
 
   /* SORT */
@@ -713,6 +831,187 @@
     document.getElementById('mat-chart-wrap').style.display = 'flex';
     if (matChart) { matChart.destroy(); matChart = null; }
     matChart = makePie('mat-canvas', 'mat-legend', 'Prazo', active.map(b => b.label), active.map(b => b.aum));
+  }
+
+  /* RENDER: MATURITY TABLE BY YEAR */
+  function renderMatTable() {
+    const rows = filteredRows.filter(p => isOnshore(p) && p.vencimento);
+    if (!rows.length) {
+      document.getElementById('mat-tbl-wrap').style.display = 'none';
+      document.getElementById('mat-tbl-state').style.display = 'block';
+      document.getElementById('mat-tbl-state').innerHTML = `<div class="state-icon">🔍</div><div class="state-msg">Nenhuma posição com vencimento encontrada (Onshore).</div>`;
+      return;
+    }
+    const yearMap = {};
+    rows.forEach(p => {
+      const yr = String(p.vencimento).slice(0, 4);
+      yearMap[yr] = (yearMap[yr] || 0) + (parseFloat(p.valor_bruto) || 0);
+    });
+    const total = Object.values(yearMap).reduce((a, b) => a + b, 0);
+    const sorted = Object.entries(yearMap).sort((a, b) => a[0].localeCompare(b[0]));
+    const maxVal = Math.max(...sorted.map(e => e[1]));
+    document.getElementById('mat-tbl-state').style.display = 'none';
+    document.getElementById('mat-tbl-wrap').style.display = 'block';
+    document.getElementById('mat-tbl-count').textContent = ` — ${sorted.length} anos`;
+    document.getElementById('mat-tbl-total').textContent = fmtBRLPlain(total);
+    document.getElementById('mat-tbl-body').innerHTML = sorted.map(([yr, val]) => {
+      const pct = total ? val / total * 100 : 0;
+      const barPct = maxVal ? val / maxVal * 100 : 0;
+      return `<tr>
+        <td><strong>${yr}</strong></td>
+        <td class="num">${fmtBRLPlain(val)}</td>
+        <td class="num">
+          <div class="pct-bar-wrap">
+            <div class="pct-bar-bg"><div class="pct-bar-fill" style="width:${barPct.toFixed(1)}%"></div></div>
+            <span class="pct-text">${pct.toFixed(1)}%</span>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  /* RENDER: ASSET ALLOCATION 12 MONTHS STACKED BAR */
+  async function renderAssetAlloc() {
+    document.getElementById('alloc-state').innerHTML = `<div class="spinner"></div><div class="state-msg">Buscando últimos 5 dias…</div>`;
+    document.getElementById('alloc-state').style.display = 'block';
+    document.getElementById('alloc-wrap').style.display = 'none';
+
+    const selDate = document.getElementById('f-date').value;
+    if (!selDate) return;
+    const days = buildLastNDays(selDate, 5);
+
+    const banker = document.getElementById('f-banker').value;
+    const contaBtg = document.getElementById('f-client').value;
+    let contaList = null;
+    if (contaBtg) {
+      contaList = [contaBtg];
+    } else if (banker) {
+      contaList = allClients.filter(c => c.banker === banker && c.conta_btg).map(c => c.conta_btg);
+    }
+
+    const allocData = {};
+    for (const dt of days) {
+      let q = sb.from('tb_btg_position')
+        .select('conta_btg, data, codigo, nome, valor_bruto, indexador, classe');
+      q = q.eq('data', dt);
+      if (contaList && contaList.length > 0) q = q.in('conta_btg', contaList);
+      const PAGE = 1000; let from = 0, dayRows = [];
+      while (true) {
+        const { data, error } = await q.range(from, from + PAGE - 1);
+        if (error || !data || data.length === 0) break;
+        dayRows = dayRows.concat(data);
+        if (data.length < PAGE) break;
+        from += PAGE;
+      }
+      const mapped = dayRows.map(p => { const key = p.conta_btg ? p.conta_btg.trim() : p.conta_btg; const ci = clientMap[key] || {}; return { ...p, conta_btg: key, banker: ci.banker||'' }; });
+      const valid = mapped.filter(p => p.banker && isOnshore(p));
+      if (valid.length > 0) allocData[dt] = valid;
+    }
+
+    const datesWithData = days.filter(d => allocData[d]);
+    if (datesWithData.length === 0) {
+      document.getElementById('alloc-state').innerHTML = `<div class="state-icon">🔍</div><div class="state-msg">Sem dados nos últimos 5 dias úteis.</div>`;
+      return;
+    }
+
+    // Collect all indexadores; "Não Classificado" always last
+    const UNCLASSIFIED = 'Não Classificado';
+    const indexSet = new Set();
+    datesWithData.forEach(dt => allocData[dt].forEach(p => {
+      const idx = resolveIndexador(p);
+      if (idx !== UNCLASSIFIED) indexSet.add(idx);
+    }));
+    const hasUnclassified = datesWithData.some(dt => allocData[dt].some(p => resolveIndexador(p) === UNCLASSIFIED));
+    const indexList = [...indexSet].sort();
+    if (hasUnclassified) indexList.push(UNCLASSIFIED);
+
+    // Daily totals
+    const totals = {};
+    datesWithData.forEach(dt => {
+      totals[dt] = allocData[dt].reduce((s, p) => s + (parseFloat(p.valor_bruto) || 0), 0);
+    });
+
+    const datasets = indexList.map((idx, i) => {
+      const isUnclass = idx === UNCLASSIFIED;
+      const color = isUnclass ? '#FF3B3B' : PALETTE[i % PALETTE.length];
+      return {
+        label: idx,
+        data: datesWithData.map(dt => {
+          const total = totals[dt] || 1;
+          const sum = allocData[dt].filter(p => resolveIndexador(p) === idx)
+            .reduce((s, p) => s + (parseFloat(p.valor_bruto) || 0), 0);
+          return parseFloat((sum / total * 100).toFixed(2));
+        }),
+        backgroundColor: color,
+        borderColor: '#1C1B1A',
+        borderWidth: 1,
+        stack: 'stack',
+      };
+    });
+
+    const labels = datesWithData.map(d => {
+      const [y, m, day] = d.split('-');
+      return `${day}/${m}/${y.slice(2)}`;
+    });
+
+    document.getElementById('alloc-state').style.display = 'none';
+    document.getElementById('alloc-wrap').style.display = 'block';
+    if (allocChart) { allocChart.destroy(); allocChart = null; }
+
+    const ctx = document.getElementById('alloc-canvas');
+    ctx.style.width = '100%'; ctx.style.height = '420px';
+
+    allocChart = new Chart(ctx, {
+      type: 'bar',
+      data: { labels, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              title: items => items[0].label,
+              label: ctx => ` ${ctx.dataset.label}: ${ctx.raw.toFixed(1)}%`,
+              afterBody: items => [`Total: ${fmtBRLPlain(totals[datesWithData[items[0].dataIndex]])}`]
+            }
+          }
+        },
+        scales: {
+          x: { stacked: true, grid: { color: '#2E2C2A' }, ticks: { color: '#7A7773', font: { size: 12 } } },
+          y: {
+            stacked: true, min: 0, max: 100,
+            grid: { color: '#2E2C2A' },
+            ticks: { color: '#7A7773', font: { size: 11 }, callback: v => v + '%' }
+          }
+        }
+      }
+    });
+
+    document.getElementById('alloc-legend').innerHTML = indexList.map(idx => {
+      const isUnclass = idx === UNCLASSIFIED;
+      const color = isUnclass
+        ? '#FF3B3B'
+        : PALETTE[indexList.filter(x => x !== UNCLASSIFIED).indexOf(idx) % PALETTE.length];
+      return `<div class="alloc-legend-item">
+        <div class="alloc-legend-dot" style="background:${color}${isUnclass ? ';box-shadow:0 0 4px #FF3B3B' : ''}"></div>
+        <span style="${isUnclass ? 'color:#FF3B3B;font-weight:700' : ''}">${idx}</span>
+      </div>`;
+    }).join('');
+  }
+
+  // Build list of the last n calendar dates up to and including selDateStr
+  // (uses the dates that actually have data in the DB — we just pass candidates and skip empty ones)
+  function buildLastNDays(selDateStr, n) {
+    const result = [];
+    const sel = new Date(selDateStr + 'T12:00:00');
+    for (let i = 0; i < n; i++) {
+      const d = new Date(sel);
+      d.setDate(d.getDate() - i);
+      result.unshift(d.toISOString().split('T')[0]);
+    }
+    return result;
   }
 
   /* SUMMARY */
