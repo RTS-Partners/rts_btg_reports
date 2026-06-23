@@ -511,7 +511,7 @@
     const errEl = document.getElementById('login-error'), btn = document.getElementById('login-btn');
     errEl.style.display = 'none'; btn.textContent = 'Entrando…'; btn.disabled = true;
     const { data, error } = await sb.auth.signInWithPassword({ email, password });
-    if (error) { errEl.textContent = 'E-mail ou senha incorretos.'; errEl.style.display = 'block'; btn.textContent = 'Entrar'; btn.disabled = false; return; }
+    if (error) { errEl.textContent = error.message || 'E-mail ou senha incorretos.'; errEl.style.display = 'block'; btn.textContent = 'Entrar'; btn.disabled = false; return; }
     if (!appReady) { appReady = true; await enterApp(data.user); }
   }
   async function doGoogleLogin() {
@@ -1020,14 +1020,88 @@
     const ctx = document.getElementById('alloc-canvas');
     ctx.style.width = '100%'; ctx.style.height = Math.max(220, datesWithData.length * 68) + 'px';
 
+    const allocPlugin = {
+      id: 'allocAnnotations',
+      afterDatasetsDraw(chart) {
+        const { ctx: c, data, scales: { x } } = chart;
+        const numBars = data.labels.length;
+        const numDS = data.datasets.length;
+
+        // Pre-compute totals and top-5 dataset indices per bar
+        const barTotals = [];
+        const top5Sets = [];
+        for (let i = 0; i < numBars; i++) {
+          const segs = data.datasets.map((ds, di) => ({ di, v: ds.data[i] || 0 }));
+          const total = segs.reduce((s, seg) => s + seg.v, 0);
+          barTotals.push(total);
+          const top5 = [...segs].sort((a, b) => b.v - a.v).slice(0, 5);
+          top5Sets.push(new Set(top5.filter(s => s.v > 0).map(s => s.di)));
+        }
+
+        c.save();
+
+        // % labels inside the top-5 segments per bar
+        c.textBaseline = 'middle';
+        c.textAlign = 'center';
+        c.font = 'bold 10px "Segoe UI", system-ui, sans-serif';
+        for (let di = 0; di < numDS; di++) {
+          const meta = chart.getDatasetMeta(di);
+          if (meta.hidden) continue;
+          for (let i = 0; i < numBars; i++) {
+            if (!top5Sets[i].has(di)) continue;
+            const bar = meta.data[i];
+            if (!bar) continue;
+            const val = data.datasets[di].data[i] || 0;
+            if (val <= 0) continue;
+            const barWidth = Math.abs(bar.x - bar.base);
+            if (barWidth < 32) continue;
+            const pct = (val / barTotals[i] * 100).toFixed(1) + '%';
+            const xCenter = (bar.x + bar.base) / 2;
+            c.shadowColor = 'rgba(0,0,0,0.7)';
+            c.shadowBlur = 3;
+            c.fillStyle = 'rgba(255,255,255,0.92)';
+            c.fillText(pct, xCenter, bar.y);
+          }
+        }
+
+        // Total saldo bruto at right edge of each bar
+        c.shadowBlur = 0;
+        c.font = 'bold 11px "Segoe UI", system-ui, sans-serif';
+        c.fillStyle = '#E8E6E0';
+        c.textAlign = 'left';
+        c.textBaseline = 'middle';
+        for (let i = 0; i < numBars; i++) {
+          const total = barTotals[i];
+          if (total <= 0) continue;
+          const xPixel = x.getPixelForValue(total) + 7;
+          let yPixel;
+          for (let di = numDS - 1; di >= 0; di--) {
+            const meta = chart.getDatasetMeta(di);
+            if (!meta.hidden && meta.data[i]) { yPixel = meta.data[i].y; break; }
+          }
+          if (yPixel === undefined) continue;
+          const abs = Math.abs(total);
+          let text;
+          if (abs >= 1e9) text = 'R$ ' + (total / 1e9).toFixed(2) + 'B';
+          else if (abs >= 1e6) text = 'R$ ' + (total / 1e6).toFixed(1) + 'M';
+          else text = 'R$ ' + (total / 1e3).toFixed(0) + 'K';
+          c.fillText(text, xPixel, yPixel);
+        }
+
+        c.restore();
+      }
+    };
+
     allocChart = new Chart(ctx, {
       type: 'bar',
       data: { labels, datasets },
+      plugins: [allocPlugin],
       options: {
         indexAxis: 'y',
         responsive: true,
         maintainAspectRatio: false,
-        interaction: { mode: 'index', intersect: false },
+        layout: { padding: { right: 110 } },
+        interaction: { mode: 'index', intersect: false, axis: 'y' },
         plugins: {
           legend: { display: false },
           tooltip: {
