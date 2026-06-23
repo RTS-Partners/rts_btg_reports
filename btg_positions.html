@@ -655,8 +655,12 @@
     const banker = document.getElementById('f-banker').value, contaBtg = document.getElementById('f-client').value;
     filteredRows = allPositions.filter(p => { if (!p.banker) return false; if (banker && p.banker !== banker) return false; if (contaBtg && p.conta_btg !== contaBtg) return false; return true; });
     sortApply(); renderSummary();
-    render(); // always clear positions loading state regardless of active tab
-    if (activeTab !== 'positions') renderTab(activeTab);
+    renderTab(activeTab);
+    // Clear positions loading spinner without a full render when on another tab
+    if (activeTab !== 'positions') {
+      if (!filteredRows.length) { document.getElementById('data-table').style.display = 'none'; document.getElementById('tbl-count').textContent = ''; setStateNoResults(); }
+      else document.getElementById('tbl-state').style.display = 'none';
+    }
   }
   function clearFilters() {
     document.getElementById('f-date').value = defaultDate || lastWorkingDay();
@@ -983,10 +987,10 @@
     }
 
     const allocData = {};
-    for (const dt of days) {
+    await Promise.all(days.map(async dt => {
       let q = sb.from('tb_btg_position')
-        .select('conta_btg, data, codigo, nome, emissor, valor_bruto, indexador, classe');
-      q = q.eq('data', dt);
+        .select('conta_btg, data, codigo, nome, emissor, valor_bruto, indexador, classe')
+        .eq('data', dt);
       if (contaList && contaList.length > 0) q = q.in('conta_btg', contaList);
       const PAGE = 1000; let from = 0, dayRows = [];
       while (true) {
@@ -999,7 +1003,7 @@
       const mapped = dayRows.map(p => { const key = p.conta_btg ? p.conta_btg.trim() : p.conta_btg; const ci = clientMap[key] || {}; return { ...p, conta_btg: key, banker: ci.banker||'' }; });
       const valid = mapped.filter(p => p.banker && isOnshore(p));
       if (valid.length > 0) allocData[dt] = valid;
-    }
+    }));
 
     const datesWithData = days.filter(d => allocData[d]);
     if (datesWithData.length === 0) { noData('Sem dados nos últimos 5 dias úteis.'); return; }
