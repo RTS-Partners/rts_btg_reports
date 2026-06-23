@@ -326,6 +326,7 @@
       <button class="tab-btn" onclick="switchTab('positions')">Posições</button>
       <button class="tab-btn" onclick="switchTab('mat-table')">Vencimentos</button>
       <button class="tab-btn" onclick="switchTab('mudancas')">Mudanças</button>
+      <button class="tab-btn" onclick="switchTab('liquidez')">Liquidez</button>
     </div>
 
     <!-- Posições -->
@@ -435,6 +436,45 @@
                 </tr>
               </thead>
               <tbody id="mud-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Liquidez -->
+    <div id="view-liquidez" class="tab-view">
+      <div class="card table-card">
+        <div class="table-head">
+          <div>
+            <span class="table-title">Liquidez das Posições</span>
+            <span class="table-count" id="liq-count"></span>
+          </div>
+        </div>
+        <div id="liq-state" class="state-box">
+          <div class="state-icon">💧</div>
+          <div class="state-msg">Selecione uma data e clique em <strong>Buscar</strong> para carregar.</div>
+        </div>
+        <div id="liq-wrap" style="display:none">
+          <div class="table-wrapper">
+            <table id="liq-table">
+              <thead>
+                <tr>
+                  <th>Cód. Cliente</th>
+                  <th>Conta</th>
+                  <th>Conta BTG</th>
+                  <th>Classe</th>
+                  <th>Ativo</th>
+                  <th>Cód. Ativo</th>
+                  <th>Emissor</th>
+                  <th>Indexador</th>
+                  <th style="text-align:right">Taxa</th>
+                  <th>Vencimento</th>
+                  <th style="text-align:right">Liquidez (dias)</th>
+                  <th style="text-align:right">Valor Bruto</th>
+                </tr>
+              </thead>
+              <tbody id="liq-body"></tbody>
             </table>
           </div>
         </div>
@@ -643,7 +683,7 @@
     const PAGE = 1000; let from = 0, all = [];
     while (true) {
       const { data, error } = await sb.from('tb_classificacao_ativos')
-        .select('codigo, ativo, indexador, on_off, vencimento, classe, direcionamento')
+        .select('codigo, ativo, indexador, on_off, vencimento, classe, direcionamento, emissor, tipo_ativo')
         .range(from, from + PAGE - 1);
       if (error) { console.error('loadClassificacao error:', error); break; }
       if (!data || data.length === 0) break;
@@ -672,6 +712,11 @@
     return (p.codigo && classificacaoMap[p.codigo.trim()]) ||
            (p.nome && classificacaoMap[p.nome.trim()]) ||
            (ticker && classificacaoMap[ticker]) || null;
+  }
+
+  function resolveEmissor(p) {
+    const cls = resolveClassificacao(p);
+    return (cls && cls.emissor != null) ? cls.emissor : p.emissor;
   }
 
   // helper: resolve indexador for a position row (prefer tb_classificacao_ativos, fallback to position's own indexador)
@@ -708,7 +753,7 @@
   /* TABS */
   function switchTab(name) {
     activeTab = name;
-    const TAB_NAMES = ['asset-alloc','positions','mat-table','mudancas'];
+    const TAB_NAMES = ['asset-alloc','positions','mat-table','mudancas','liquidez'];
     document.querySelectorAll('.tab-btn').forEach((b, i) => b.classList.toggle('active', TAB_NAMES[i] === name));
     document.querySelectorAll('.tab-view').forEach(v => v.classList.remove('active'));
     document.getElementById('view-' + name).classList.add('active');
@@ -719,6 +764,7 @@
     else if (name === 'mat-table') renderMatTable();
     else if (name === 'asset-alloc') renderAssetAlloc();
     else if (name === 'mudancas') renderMudancas();
+    else if (name === 'liquidez') renderLiquidez();
   }
 
   /* FETCH + FILTER */
@@ -779,6 +825,10 @@
     document.getElementById('mud-state').innerHTML = `<div class="state-icon">📈</div><div class="state-msg">Selecione uma data e clique em <strong>Buscar</strong> para carregar.</div>`;
     document.getElementById('mud-count').textContent = '';
     document.getElementById('mud-dates').textContent = '';
+    document.getElementById('liq-wrap').style.display = 'none';
+    document.getElementById('liq-state').style.display = 'block';
+    document.getElementById('liq-state').innerHTML = `<div class="state-icon">💧</div><div class="state-msg">Selecione uma data e clique em <strong>Buscar</strong> para carregar.</div>`;
+    document.getElementById('liq-count').textContent = '';
   }
 
   /* SORT */
@@ -818,6 +868,7 @@
 
   /* RENDER: POSITIONS */
   function rowHtml(p) {
+    const emissor = resolveEmissor(p);
     return `
       <tr>
         <td><span class="badge">${x(p.client_code)}</span></td>
@@ -826,7 +877,7 @@
         <td>${x(classLabel(p.classe))}</td>
         <td class="td-ativo" title="${p.nome != null ? String(p.nome).replace(/"/g,'&quot;') : ''}">${x(p.nome)}</td>
         <td class="td-muted td-mono">${x(p.codigo)}</td>
-        <td class="td-muted td-emissor" title="${p.emissor != null ? String(p.emissor).replace(/"/g,'&quot;') : ''}">${x(p.emissor)}</td>
+        <td class="td-muted td-emissor" title="${emissor != null ? String(emissor).replace(/"/g,'&quot;') : ''}">${x(emissor)}</td>
         <td class="td-indexador" title="${p.indexador != null ? String(p.indexador).replace(/"/g,'&quot;') : ''}">${x(p.indexador)}</td>
         <td class="td-right td-muted">${fmtRate(p.taxa)}</td>
         <td class="td-muted td-vencimento">${fmtDate(p.vencimento)}</td>
@@ -1622,6 +1673,77 @@
       mudStateEl.style.display = 'block';
       mudWrapEl.style.display  = 'none';
     }
+  }
+
+  /* RENDER: LIQUIDEZ */
+  function renderLiquidez() {
+    const liqStateEl = document.getElementById('liq-state');
+    const liqWrapEl  = document.getElementById('liq-wrap');
+    if (!filteredRows.length) {
+      liqWrapEl.style.display = 'none';
+      liqStateEl.style.display = 'block';
+      liqStateEl.innerHTML = `<div class="state-icon">🔍</div><div class="state-msg">Sem dados para a data selecionada.</div>`;
+      document.getElementById('liq-count').textContent = '';
+      return;
+    }
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const aggMap = new Map();
+    filteredRows.forEach(p => {
+      const isCaixa = p.nome === 'Caixa BTG';
+      const key = isCaixa
+        ? [p.client_code||'', p.conta||'', 'Caixa BTG'].join('|')
+        : [p.client_code||'', p.conta||'', p.nome||'', p.taxa!=null?p.taxa:'', p.vencimento||''].join('|');
+      if (!aggMap.has(key)) {
+        const cls        = resolveClassificacao(p);
+        const emissor    = (cls && cls.emissor != null) ? cls.emissor : (p.emissor || '');
+        const tipoAtivo  = (cls && cls.tipo_ativo) || '';
+        const rawIdx     = (cls && cls.indexador) || p.indexador || '';
+        const taxa       = parseFloat(p.taxa);
+        let liquidez;
+        if (tipoAtivo === 'Emissão Bancária' && emissor.toUpperCase().includes('BTG') && rawIdx === 'CDI' && taxa === 100) {
+          liquidez = 0;
+        } else if (!p.vencimento) {
+          liquidez = null;
+        } else {
+          liquidez = Math.ceil((new Date(p.vencimento + 'T12:00:00') - today) / 86400000);
+        }
+        aggMap.set(key, { ...p, valor_bruto: 0, quantidade: 0, vencimento: isCaixa ? null : p.vencimento, _emissor: emissor, liquidez });
+      }
+      const a = aggMap.get(key);
+      a.valor_bruto += parseFloat(p.valor_bruto) || 0;
+      a.quantidade  += parseFloat(p.quantidade)  || 0;
+    });
+    const rows = Array.from(aggMap.values());
+    rows.sort((a, b) => {
+      const la = a.liquidez, lb = b.liquidez;
+      if (la === null && lb === null) return 0;
+      if (la === null) return 1;
+      if (lb === null) return -1;
+      if (la !== lb) return la - lb;
+      const cc = String(a.client_code||'').localeCompare(String(b.client_code||''));
+      if (cc !== 0) return cc;
+      return String(a.conta||'').localeCompare(String(b.conta||''));
+    });
+    liqStateEl.style.display = 'none';
+    liqWrapEl.style.display  = 'block';
+    document.getElementById('liq-count').textContent = ` — ${rows.length.toLocaleString('pt-BR')} linhas`;
+    document.getElementById('liq-body').innerHTML = rows.map(p => {
+      const liqDisplay = p.liquidez === null ? '<span class="td-muted">—</span>' : p.liquidez.toLocaleString('pt-BR');
+      return `<tr>
+        <td><span class="badge">${x(p.client_code)}</span></td>
+        <td>${x(p.conta)}</td>
+        <td class="td-muted td-mono">${x(p.conta_btg)}</td>
+        <td>${x(classLabel(p.classe))}</td>
+        <td class="td-ativo" title="${p.nome != null ? String(p.nome).replace(/"/g,'&quot;') : ''}">${x(p.nome)}</td>
+        <td class="td-muted td-mono">${x(p.codigo)}</td>
+        <td class="td-muted td-emissor" title="${p._emissor != null ? String(p._emissor).replace(/"/g,'&quot;') : ''}">${x(p._emissor)}</td>
+        <td class="td-indexador">${x(resolveIndexador(p))}</td>
+        <td class="td-right td-muted">${fmtRate(p.taxa)}</td>
+        <td class="td-muted td-vencimento">${fmtDate(p.vencimento)}</td>
+        <td class="td-right td-muted">${liqDisplay}</td>
+        <td class="td-right"><strong>${fmtBRL(p.valor_bruto)}</strong></td>
+      </tr>`;
+    }).join('');
   }
 </script>
 </body>
