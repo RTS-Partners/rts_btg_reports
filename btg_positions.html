@@ -750,9 +750,9 @@
   }
 
   function resolveClassificacao(p) {
+    if (p.codigo) return classificacaoMap[p.codigo.trim()] || null;
     const ticker = cryptoTicker(p.nome);
-    return (p.codigo && classificacaoMap[p.codigo.trim()]) ||
-           (p.nome && classificacaoMap[p.nome.trim()]) ||
+    return (p.nome && classificacaoMap[p.nome.trim()]) ||
            (ticker && classificacaoMap[ticker]) || null;
   }
 
@@ -1934,7 +1934,7 @@
           liquidez = 0;
         } else if (String(p.nome || '').toUpperCase().startsWith('CDB') && emissor.toUpperCase().includes('BTG') && rawIdx === 'CDI' && taxa === 100) {
           liquidez = 0;
-        } else if (cls && cls.tipo_ativo === 'fundo') {
+        } else if (cls && (cls.tipo_ativo || '').toLowerCase() === 'fundo') {
           liquidez = (cls.liquidez != null) ? cls.liquidez : null;
         } else if (!p.vencimento) {
           liquidez = null;
