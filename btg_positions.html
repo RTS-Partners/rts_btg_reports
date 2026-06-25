@@ -750,7 +750,10 @@
   }
 
   function resolveClassificacao(p) {
-    if (p.codigo) return classificacaoMap[p.codigo.trim()] || null;
+    if (p.codigo) {
+      const byCode = classificacaoMap[p.codigo.trim()];
+      if (byCode) return byCode;
+    }
     const ticker = cryptoTicker(p.nome);
     return (p.nome && classificacaoMap[p.nome.trim()]) ||
            (ticker && classificacaoMap[ticker]) || null;
